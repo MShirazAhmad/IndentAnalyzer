@@ -135,16 +135,26 @@ class CurveFitter:
         Tangent line: P = P_max + S * (h - h_max) = S * h + (P_max - S * h_max)
         where S is the stiffness (dP/dh at h_max)
         
+        Line extends from h_max down to where it crosses y=0 (P=0)
+        Crossing point: h_cross = h_max - P_max/S
+        
         Returns:
-            Tuple of (displacement, load) for tangent line extending down to h_f
+            Tuple of (displacement, load) for tangent line stopping at y=0
         """
         if stiffness <= 0:
             return np.array([h_max]), np.array([P_max])
         
-        # Generate tangent line from h_max down to h_f
-        h_tangent = np.linspace(h_max, h_f, 50)
+        # Calculate where tangent line crosses y=0 (P=0)
+        # 0 = P_max + S * (h_cross - h_max)
+        # h_cross = h_max - P_max / S
+        h_cross = h_max - P_max / stiffness
+        
+        # Ensure crossing point is beyond h_f (physically meaningful)
+        h_cross = max(h_cross, h_f)
+        
+        # Generate tangent line from h_max down to crossing point
+        h_tangent = np.linspace(h_max, h_cross, 50)
         P_tangent = P_max + stiffness * (h_tangent - h_max)
-        P_tangent = np.maximum(P_tangent, 0)  # Ensure non-negative loads
         
         return h_tangent, P_tangent
     
