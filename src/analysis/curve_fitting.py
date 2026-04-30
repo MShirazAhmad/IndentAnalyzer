@@ -134,6 +134,45 @@ class CurveFitter:
             # Reverse both arrays to normalize
             return displacement[::-1], load[::-1]
         return displacement, load
+    
+    @staticmethod
+    def _calculate_tangent_line(h_max: float, P_max: float, stiffness: float, 
+                               h_f: float) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Calculate tangent line at maximum load point.
+        Tangent line: P = P_max + S * (h - h_max) = S * h + (P_max - S * h_max)
+        where S is the stiffness (dP/dh at h_max)
+        
+        Returns:
+            Tuple of (displacement, load) for tangent line extending down to h_f
+        """
+        if stiffness <= 0:
+            return np.array([h_max]), np.array([P_max])
+        
+        # Generate tangent line from h_max down to h_f
+        h_tangent = np.linspace(h_max, h_f, 50)
+        P_tangent = P_max + stiffness * (h_tangent - h_max)
+        P_tangent = np.maximum(P_tangent, 0)  # Ensure non-negative loads
+        
+        return h_tangent, P_tangent
+    
+    @staticmethod
+    def _calculate_oliver_pharr_stiffness(h_max: float, P_max: float, A: float, 
+                                         h_f: float, m: float) -> float:
+        """Calculate stiffness (dP/dh) at maximum load for Oliver-Pharr model"""
+        if h_max == h_f:
+            return 0.0
+        return A * m * ((h_max - h_f) ** (m - 1))
+    
+    @staticmethod
+    def _calculate_power_law_stiffness(h_max: float, P_max: float, h_f: float, 
+                                       m: float) -> float:
+        """Calculate stiffness (dP/dh) at maximum load for power law model"""
+        if h_max == h_f:
+            return 0.0
+        h_range = h_max - h_f
+        return (P_max * m / h_range) if h_range > 0 else 0.0
+    
 
     @staticmethod
     def _select_upper_unloading_segment(displacement: np.ndarray, load: np.ndarray,
@@ -231,6 +270,12 @@ class CurveFitter:
             
             # Check fitting quality
             if r_squared >= self.iso.MIN_R_SQUARED:
+                # Calculate tangent line at maximum load
+                h_max = np.max(h_full)
+                P_max = np.max(P_full)
+                stiffness = self._calculate_oliver_pharr_stiffness(h_max, P_max, A_fit, h_f_fit, m_fit)
+                h_tangent, P_tangent = self._calculate_tangent_line(h_max, P_max, stiffness, h_f_fit)
+                
                 results.update({
                     'success': True,
                     'parameters': {'A': A_fit, 'h_f': h_f_fit, 'm': m_fit},
@@ -238,8 +283,11 @@ class CurveFitter:
                     'r_squared_full': r_squared_full,
                     'fitted_curve': P_fitted_display,
                     'fit_displacement': h_display_range,
+                    'tangent_displacement': h_tangent,
+                    'tangent_load': P_tangent,
                     'fit_curve': P_fitted_segment,
                     'residuals': P_full - P_fitted,
+                    'stiffness': stiffness,
                     'parameter_errors': np.sqrt(np.diag(pcov))
                 })
             else:
@@ -304,6 +352,11 @@ class CurveFitter:
             r_squared_full = 1 - (ss_res_full / ss_tot_full) if ss_tot_full > 0 else 0
             
             if r_squared >= self.iso.MIN_R_SQUARED:
+                # Calculate tangent line at maximum load
+                h_max = np.max(h_full)
+                stiffness = self._calculate_power_law_stiffness(h_max, P_max, h_f_fit, m_fit)
+                h_tangent, P_tangent = self._calculate_tangent_line(h_max, P_max, stiffness, h_f_fit)
+                
                 results.update({
                     'success': True,
                     'parameters': {'P_max': P_max, 'h_f': h_f_fit, 'm': m_fit},
@@ -311,8 +364,11 @@ class CurveFitter:
                     'r_squared_full': r_squared_full,
                     'fitted_curve': P_fitted_display,
                     'fit_displacement': h_display_range,
+                    'tangent_displacement': h_tangent,
+                    'tangent_load': P_tangent,
                     'fit_curve': P_fitted_segment,
                     'residuals': P_full - P_fitted,
+                    'stiffness': stiffness,
                     'parameter_errors': np.sqrt(np.diag(pcov))
                 })
             else:
