@@ -12,8 +12,8 @@ try:
     from ..core.standards import ISO14577Constants, MaterialProperties
     from .curve_fitting import AreaFunction
 except ImportError:
-    from ..core.standards import ISO14577Constants, MaterialProperties
-    from .curve_fitting import AreaFunction
+    from core.standards import ISO14577Constants, MaterialProperties
+    from analysis.curve_fitting import AreaFunction
 
 
 class MechanicalPropertiesCalculator:
@@ -95,9 +95,11 @@ class MechanicalPropertiesCalculator:
         stiffness_n_m = stiffness * 1e6  # mN/nm to N/m
         area_m2 = contact_area * 1e-18  # nm² to m²
         
-        # Reduced modulus calculation
+        # Reduced modulus — ISO 14577-1:2015 §A.8
+        # Er = (√π / (2β)) · S / √A  with β = 1.034 for Berkovich (pyramidal indenter)
+        beta = 1.034
         sqrt_area = np.sqrt(area_m2)
-        reduced_modulus_pa = (np.sqrt(np.pi) / 2) * (stiffness_n_m / sqrt_area)
+        reduced_modulus_pa = (np.sqrt(np.pi) / (2 * beta)) * (stiffness_n_m / sqrt_area)
         
         results.update({
             'reduced_modulus_pa': reduced_modulus_pa,

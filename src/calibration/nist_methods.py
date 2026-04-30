@@ -14,8 +14,8 @@ try:
     from ..core.standards import ISO14577Constants, AnalysisConfig
     from ..analysis.mechanical_calculator import MechanicalPropertiesCalculator
 except ImportError:
-    from ..core.standards import ISO14577Constants, AnalysisConfig
-    from ..analysis.mechanical_calculator import MechanicalPropertiesCalculator
+    from core.standards import ISO14577Constants, AnalysisConfig
+    from analysis.mechanical_calculator import MechanicalPropertiesCalculator
 
 
 class NISTCalibrationMethods:
@@ -297,7 +297,7 @@ class NISTCalibrationMethods:
         try:
             from ..analysis.main_analyzer import NanoindentationAnalyzer
         except ImportError:
-            from ..analysis.main_analyzer import NanoindentationAnalyzer
+            from analysis.main_analyzer import NanoindentationAnalyzer
         
         results = {
             'file_analyzed': xls_file_path,
@@ -320,40 +320,45 @@ class NISTCalibrationMethods:
                 results['errors'].append("No valid test results found in XLS file")
                 return results
             
-            # Extract calibration data
+            # Get reference material properties for calibration
+            ref_material = self.iso.get_reference_material(reference_material)
+            known_modulus = ref_material['modulus']
+            known_poisson = ref_material.get('poisson', self.iso.FUSED_SILICA_POISSON)
+            indenter_modulus = self.iso.DIAMOND_MODULUS
+            indenter_poisson = self.iso.DIAMOND_POISSON
+
+            # Reduced modulus for the chosen reference material (constant for this run)
+            ref_compliance = ((1 - known_poisson**2) / known_modulus) + ((1 - indenter_poisson**2) / indenter_modulus)
+            reference_reduced_modulus = (1.0 / ref_compliance) if ref_compliance > 0 else known_modulus
+
+            # Extract calibration data using unloading-fit criteria
             calibration_data = []
             
             for test_name, test_data in analysis_results['tests'].items():
-                if (test_data.get('success', False) and 
-                    'mechanical_properties' in test_data and
-                    test_data['mechanical_properties'].get('overall_valid', False)):
-                    
-                    props = test_data['mechanical_properties']
-                    input_params = props.get('input_parameters', {})
-                    reduced_mod = props.get('reduced_modulus', {})
-                    
-                    # Check if test has required data
-                    if ('contact_depth_nm' in input_params and 
-                        'stiffness_mn_nm' in input_params and
-                        'reduced_modulus_gpa' in reduced_mod and
-                        reduced_mod.get('valid', False)):
-                        
-                        # Convert units for NIST calibration
-                        test_calibration_data = {
-                            'contact_depth': input_params['contact_depth_nm'] * 1e-9,  # nm to m
-                            'stiffness': input_params['stiffness_mn_nm'] * 1e-3,       # mN/nm to N/m
-                            'reduced_modulus': reduced_mod['reduced_modulus_gpa'] * 1e9,  # GPa to Pa
-                            'test_name': test_name
-                        }
-                        calibration_data.append(test_calibration_data)
+                curve_fit = test_data.get('curve_fitting', {})
+                if not curve_fit.get('success', False):
+                    continue
+
+                contact_depth_nm = curve_fit.get('contact_depth')
+                stiffness_mn_nm = curve_fit.get('stiffness')
+
+                if contact_depth_nm is None or stiffness_mn_nm is None:
+                    continue
+                if contact_depth_nm <= 0 or stiffness_mn_nm <= 0:
+                    continue
+
+                # Convert units for NIST calibration
+                test_calibration_data = {
+                    'contact_depth': contact_depth_nm * 1e-9,  # nm to m
+                    'stiffness': stiffness_mn_nm * 1e6,        # mN/nm → N/m (1 mN/nm = 10⁶ N/m)
+                    'reduced_modulus': reference_reduced_modulus,  # Pa (reference material)
+                    'test_name': test_name
+                }
+                calibration_data.append(test_calibration_data)
             
             if len(calibration_data) < 5:
-                results['errors'].append(f"Insufficient valid tests found: {len(calibration_data)} (need ≥5)")
+                results['errors'].append(f"Insufficient valid unloading fits found: {len(calibration_data)} (need ≥5)")
                 return results
-            
-            # Get reference material properties
-            ref_material = self.iso.get_reference_material(reference_material)
-            known_modulus = ref_material['modulus']
             
             # Perform tip area function calibration
             calibration_results = self.calibrate_tip_area_function(
@@ -362,14 +367,16 @@ class NISTCalibrationMethods:
             )
             
             # Extract key results
-            if calibration_results.get('valid', False):
-                coeffs = calibration_results.get('area_coefficients', {})
-                
+            coeffs = calibration_results.get('area_coefficients', {})
+            has_coefficients = all(k in coeffs for k in ['C0', 'C1', 'C2'])
+            calibration_is_high_quality = calibration_results.get('valid', False)
+
+            if has_coefficients:
                 results.update({
                     'coefficients': {
-                        'C0_nm2_per_nm2': coeffs.get('C0_nm2_per_nm2', 0),
-                        'C1_nm2_per_nm': coeffs.get('C1_nm2_per_nm', 0),
-                        'C2_nm2_per_nm05': coeffs.get('C2_nm2_per_nm05', 0),
+                        'C0_nm2_per_nm2': coeffs.get('C0_nm2_per_nm2', coeffs.get('C0', 0) * 1e18),
+                        'C1_nm2_per_nm': coeffs.get('C1_nm2_per_nm', coeffs.get('C1', 0) * 1e9),
+                        'C2_nm2_per_nm05': coeffs.get('C2_nm2_per_nm05', coeffs.get('C2', 0) * 1e9 / np.sqrt(1e-9)),
                         'C0_SI': coeffs.get('C0', 0),  # m²/m²
                         'C1_SI': coeffs.get('C1', 0),  # m²/m
                         'C2_SI': coeffs.get('C2', 0)   # m²/m^0.5
@@ -383,9 +390,15 @@ class NISTCalibrationMethods:
                     'warnings': calibration_results.get('warnings', []),
                     'errors': calibration_results.get('errors', [])
                 })
+                if not calibration_is_high_quality:
+                    results['warnings'].append(
+                        "Calibration coefficients were generated, but fit quality is below the preferred threshold."
+                    )
             else:
                 results['errors'].extend(calibration_results.get('errors', []))
                 results['warnings'].extend(calibration_results.get('warnings', []))
+                if not results['errors']:
+                    results['errors'].append("Calibration failed: no area-function coefficients were produced.")
         
         except Exception as e:
             results['errors'].append(f"Tip coefficient extraction failed: {str(e)}")

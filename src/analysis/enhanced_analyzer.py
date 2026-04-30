@@ -9,8 +9,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import matplotlib
-# Configure matplotlib for better macOS compatibility
-matplotlib.use('MacOSX')  # Use native macOS backend
+# Do not force a global backend here; GUI and callers set their own backend.
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize_scalar, curve_fit
 from matplotlib.patches import Rectangle
@@ -1338,13 +1337,13 @@ class FixedIndentXLSAnalyzer(IndentXLSAnalyzer):
                 n_points = min(10, len(df_unloading_fit))
                 indices = np.linspace(0, len(df_unloading_fit)-1, n_points, dtype=int)
                 for idx in indices:
-                    i = indices.tolist().index(idx)
+                    point_idx = indices.tolist().index(idx)
                     disp = df_unloading_fit['Displacement Into Surface'].iloc[idx]
                     load_exp = df_unloading_fit['Load On Sample'].iloc[idx]
                     load_fit = y_pred_unloading[idx]
                     diff_abs = abs(load_exp - load_fit)
                     diff_pct = (diff_abs / load_exp) * 100 if load_exp > 0 else 0
-                    print(f"{i+1:5d} | {disp:8.2f} | {load_exp:12.3f} | {load_fit:12.3f} | {diff_abs:8.3f} | {diff_pct:7.2f}")
+                    print(f"{point_idx+1:5d} | {disp:8.2f} | {load_exp:12.3f} | {load_fit:12.3f} | {diff_abs:8.3f} | {diff_pct:7.2f}")
                 
                 # Set power law params and find intersection
                 if use_power_law_unloading:
@@ -1777,9 +1776,14 @@ class FixedIndentXLSAnalyzer(IndentXLSAnalyzer):
                              fontsize=14, fontweight='bold', pad=20)
                     
                     if self.export:
-                        plt.savefig(f"/Users/shiraz/scripts/HEC14s/IndentXLSAnalyzer/HEC14S1_Test_{i}_analysis.png", 
-                                   dpi=300, bbox_inches='tight')
-                        print(f"   ✓ Plot saved: HEC14S1_Test_{i}_analysis.png")
+                        output_dir = os.path.join(
+                            os.path.dirname(os.path.abspath(self.filename)),
+                            "analysis_output"
+                        )
+                        os.makedirs(output_dir, exist_ok=True)
+                        plot_file = os.path.join(output_dir, f"{Path(self.filename).stem}_Test_{i}_analysis.png")
+                        plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+                        print(f"   ✓ Plot saved: {plot_file}")
                     
                     if not self.hidePlot:
                         print(f"   ✓ Displaying plot for Test {i}...")
@@ -1885,8 +1889,11 @@ class FixedIndentXLSAnalyzer(IndentXLSAnalyzer):
                 print(f"Error processing test {i}: {str(e)}")
                 continue
 
-        # Save calibration results
-        output_dir = "/Users/shiraz/scripts/HEC14s/IndentXLSAnalyzer"
+        # Save calibration results next to the source data file
+        output_dir = os.path.join(
+            os.path.dirname(os.path.abspath(self.filename)),
+            "analysis_output"
+        )
         self.save_calibration_results(calibrated_coeffs, calibration_data, output_dir)
 
         return all_results
@@ -1896,6 +1903,7 @@ class FixedIndentXLSAnalyzer(IndentXLSAnalyzer):
         Save tip calibration results to files
         """
         try:
+            os.makedirs(output_dir, exist_ok=True)
             # Save calibrated coefficients
             coeffs_df = pd.DataFrame([{
                 'Coefficient': f'C{i}',

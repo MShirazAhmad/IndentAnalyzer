@@ -18,14 +18,12 @@ try:
     from ..core.validators import DataValidator, create_comprehensive_validation_report
     from .curve_fitting import CurveFitter, fit_multiple_methods, AreaFunction
     from .mechanical_calculator import MechanicalPropertiesCalculator, TipCalibration
-    from ..calibration.nist_methods import NISTCalibrationMethods
 except ImportError:
-    from ..core.standards import ISO14577Constants, AnalysisConfig, MaterialProperties
-    from ..core.data_processor import ExcelDataLoader, DataProcessor, BatchProcessor
-    from ..core.validators import DataValidator, create_comprehensive_validation_report
-    from .curve_fitting import CurveFitter, fit_multiple_methods, AreaFunction
-    from .mechanical_calculator import MechanicalPropertiesCalculator, TipCalibration
-    from ..calibration.nist_methods import NISTCalibrationMethods
+    from core.standards import ISO14577Constants, AnalysisConfig, MaterialProperties
+    from core.data_processor import ExcelDataLoader, DataProcessor, BatchProcessor
+    from core.validators import DataValidator, create_comprehensive_validation_report
+    from analysis.curve_fitting import CurveFitter, fit_multiple_methods, AreaFunction
+    from analysis.mechanical_calculator import MechanicalPropertiesCalculator, TipCalibration
 
 
 # Configure logging
@@ -60,7 +58,11 @@ class NanoindentationAnalyzer:
         self.data_processor = DataProcessor()
         self.validator = DataValidator()
         self.curve_fitter = CurveFitter()
-        self.nist_calibration = NISTCalibrationMethods()  # NIST standard calibration methods
+        try:
+            from ..calibration.nist_methods import NISTCalibrationMethods
+        except ImportError:
+            from calibration.nist_methods import NISTCalibrationMethods
+        self.nist_calibration = NISTCalibrationMethods()
         
         # Set up area function
         if area_function_coefficients:

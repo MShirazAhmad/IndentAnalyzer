@@ -32,9 +32,8 @@ echo ""
 # Launch the GUI from the new structure
 python3 -c "
 import sys
-sys.path.insert(0, 'src')
-from gui.main_interface import NanoindentationGUI
-import sys
+sys.path.insert(0, '.')
+from src.gui.main_interface import NanoindentationGUI
 from PyQt5.QtWidgets import QApplication
 
 app = QApplication(sys.argv)

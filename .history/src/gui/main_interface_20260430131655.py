@@ -595,7 +595,6 @@ class NanoindentationGUI(QMainWindow):
         self.config_values: Dict[str, Any] = self.load_analysis_config()
         self.current_analysis_file_path: Optional[str] = None
         self.pending_analysis_context: Optional[str] = None
-        self.calibration_plot_widget: Optional[MatplotlibWidget] = None
         
         # Set up the GUI
         self.init_ui()
@@ -672,171 +671,16 @@ class NanoindentationGUI(QMainWindow):
         if not self.calibration_status_text:
             return
 
-        C = [self.calibration_coefficients.get(f'C{i}', 0.0) for i in range(9)]
-        c0_dev = abs(C[0] - 24.5) / 24.5 * 100
-        n_corrections = sum(1 for c in C[1:] if abs(c) > 1e-10)
-
-        if c0_dev < 1 and n_corrections == 0:
-            quality = "EXCELLENT  (ideal Berkovich geometry)"
-        elif c0_dev < 5:
-            quality = f"GOOD  (C0 within {c0_dev:.1f}% of ideal, {n_corrections} correction term(s) active)"
-        elif c0_dev < 15:
-            quality = f"FAIR  (C0 deviates {c0_dev:.1f}% from ideal, {n_corrections} correction term(s) active)"
-        else:
-            quality = f"REVIEW NEEDED  (C0 deviates {c0_dev:.1f}% from ideal)"
-
         coeff_lines = []
-        descriptions = [
-            "Main area scaling  (ideal = 24.5 for Berkovich)",
-            "Linear correction   (tip rounding / blunting)",
-            "hc^0.5 correction  (shallow-depth regime)",
-            "hc^0.25 correction",
-            "hc^0.125 correction",
-            "hc^0.0625 correction",
-            "hc^0.03 correction",
-            "hc^0.016 correction",
-            "hc^0.008 correction",
-        ]
-        for i in range(9):
-            val = C[i]
-            flag = "  ← non-zero" if i > 0 and abs(val) > 1e-10 else ""
-            coeff_lines.append(f"  C{i} = {val:>14.6g}    {descriptions[i]}{flag}")
+        for key in [f"C{i}" for i in range(9)]:
+            coeff_lines.append(f"• {key} = {self.calibration_coefficients.get(key, 0.0):.6g}")
 
-        file_display = self.calibration_file_path or "not saved / not loaded from file"
         self.calibration_status_text.setPlainText(
-            f"Source : {self.calibration_source}\n"
-            f"File   : {file_display}\n"
-            f"Quality: {quality}\n\n"
-            "Area function  A(hc) = C0·hc² + C1·hc + C2·hc^0.5 + … + C8·hc^0.008\n"
-            + "\n".join(coeff_lines) +
-            "\n\nSee 'Calibration Profile' tab on the right for a visual reliability assessment."
+            "Loaded calibration profile\n"
+            f"Source: {self.calibration_source}\n"
+            f"File: {self.calibration_file_path or 'not saved / not loaded from file'}\n\n"
+            "Area function coefficients:\n" + "\n".join(coeff_lines)
         )
-
-    def show_calibration_reliability_plot(self):
-        """Render a 4-panel reliability chart for the active calibration in the right panel."""
-        if not self.calibration_plot_widget:
-            return
-
-        C = [self.calibration_coefficients.get(f'C{i}', 0.0) for i in range(9)]
-        exponents = [2, 1, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625, 0.0078125]
-
-        hc = np.linspace(1, 2000, 600)  # contact depth range in nm
-        A_loaded = sum(C[i] * hc ** exponents[i] for i in range(9))
-        A_ideal = 24.5 * hc ** 2          # perfect Berkovich geometry
-        deviation_pct = (A_loaded - A_ideal) / A_ideal * 100
-        max_dev = float(np.max(np.abs(deviation_pct)))
-
-        fig = self.calibration_plot_widget.figure
-        fig.clear()
-        fig.patch.set_facecolor('#f8f9fa')
-
-        ax1 = fig.add_subplot(2, 2, 1)
-        ax2 = fig.add_subplot(2, 2, 2)
-        ax3 = fig.add_subplot(2, 2, 3)
-        ax4 = fig.add_subplot(2, 2, 4)
-
-        # ── Panel 1: Area function curve ──────────────────────────────────
-        ax1.plot(hc, A_ideal / 1e6, 'k--', linewidth=1.5, alpha=0.55,
-                 label='Ideal Berkovich  (C0=24.5, rest=0)')
-        ax1.plot(hc, A_loaded / 1e6, color='steelblue', linewidth=2.2,
-                 label='Loaded calibration')
-        ax1.set_xlabel('Contact Depth  hc (nm)')
-        ax1.set_ylabel('Projected Area  A  (µm²)')
-        ax1.set_title('Tip Area Function  A(hc)\nLoaded vs. Ideal Geometry', fontweight='bold')
-        ax1.legend(fontsize=8)
-        ax1.grid(True, alpha=0.3)
-
-        # ── Panel 2: % deviation from ideal ───────────────────────────────
-        pos_mask = deviation_pct >= 0
-        ax2.fill_between(hc, deviation_pct, 0,
-                         where=pos_mask, alpha=0.25, color='tomato', label='Above ideal')
-        ax2.fill_between(hc, deviation_pct, 0,
-                         where=~pos_mask, alpha=0.25, color='steelblue', label='Below ideal')
-        ax2.plot(hc, deviation_pct, color='darkorange', linewidth=1.8)
-        ax2.axhline(0,  color='black',  linestyle='--', linewidth=0.9, alpha=0.6)
-        ax2.axhline(5,  color='red',    linestyle=':',  linewidth=1.0, alpha=0.7)
-        ax2.axhline(-5, color='red',    linestyle=':',  linewidth=1.0, alpha=0.7, label='±5 % threshold')
-        ax2.set_xlabel('Contact Depth  hc (nm)')
-        ax2.set_ylabel('Deviation from Ideal  (%)')
-        ax2.set_title('Deviation from Perfect Geometry\n0 % = tip matches ideal Berkovich exactly',
-                      fontweight='bold')
-        ax2.legend(fontsize=8)
-        ax2.grid(True, alpha=0.3)
-
-        # ── Panel 3: Coefficient bar chart ────────────────────────────────
-        coeff_names = [f'C{i}' for i in range(9)]
-        colors = ['#2980b9' if v >= 0 else '#e74c3c' for v in C]
-        ax3.bar(coeff_names, C, color=colors, edgecolor='black', linewidth=0.6)
-        ax3.axhline(0, color='black', linewidth=0.8)
-        ax3.set_xlabel('Coefficient  (C0 … C8)')
-        ax3.set_ylabel('Value')
-        ax3.set_title('Area Function Coefficients\nC0 dominates; C1–C8 correct for tip imperfection',
-                      fontweight='bold')
-        ax3.grid(True, alpha=0.3, axis='y')
-        # annotate each bar with its value
-        for idx, (name, val) in enumerate(zip(coeff_names, C)):
-            if abs(val) > 1e-10:
-                ax3.annotate(f'{val:.3g}', xy=(idx, val),
-                             ha='center', va='bottom' if val >= 0 else 'top',
-                             fontsize=7, color='black')
-
-        # ── Panel 4: Quality summary table ────────────────────────────────
-        ax4.axis('off')
-        n_active = sum(1 for c in C[1:] if abs(c) > 1e-10)
-        c0_dev_pct = abs(C[0] - 24.5) / 24.5 * 100
-
-        if max_dev < 2 and c0_dev_pct < 1:
-            verdict, verdict_color = 'EXCELLENT', '#27ae60'
-        elif max_dev < 10:
-            verdict, verdict_color = 'GOOD', '#2ecc71'
-        elif max_dev < 20:
-            verdict, verdict_color = 'FAIR', '#e67e22'
-        else:
-            verdict, verdict_color = 'REVIEW NEEDED', '#e74c3c'
-
-        rows = [
-            ['C0  (primary scale)', f'{C[0]:.4f}', '24.5 (ideal)', f'{c0_dev_pct:.2f} % from ideal'],
-            ['Active corrections\n(C1 – C8)',       f'{n_active} / 8',  '0 = pure ideal',   'Higher = more tip wear'],
-            ['Max area deviation\n(0–2000 nm)',     f'{max_dev:.2f} %', '< 5 % preferred',  'Across full depth range'],
-            ['Overall verdict',                     verdict,            '',                  'See colour →'],
-        ]
-        col_labels = ['Metric', 'Your Value', 'Reference', 'Interpretation']
-        tbl = ax4.table(cellText=rows, colLabels=col_labels,
-                        loc='center', cellLoc='center')
-        tbl.auto_set_font_size(False)
-        tbl.set_fontsize(8.5)
-        tbl.scale(1, 2.1)
-
-        for (r, c_idx), cell in tbl.get_celld().items():
-            cell.set_edgecolor('#cccccc')
-            if r == 0:
-                cell.set_facecolor('#2c3e50')
-                cell.get_text().set_color('white')
-                cell.get_text().set_fontweight('bold')
-            elif r == len(rows) and c_idx == 1:
-                cell.set_facecolor(verdict_color)
-                cell.get_text().set_color('white')
-                cell.get_text().set_fontweight('bold')
-            elif r % 2 == 0:
-                cell.set_facecolor('#f0f4f8')
-
-        ax4.set_title('Calibration Quality Assessment', fontweight='bold', pad=12)
-
-        # ── Overall figure title ───────────────────────────────────────────
-        fname = Path(self.calibration_file_path).name if self.calibration_file_path else 'manual / default'
-        fig.suptitle(
-            f'Calibration Reliability  —  {self.calibration_source}  |  {fname}',
-            fontsize=11, fontweight='bold', y=0.99
-        )
-        fig.tight_layout(rect=[0, 0, 1, 0.97])
-        self.calibration_plot_widget.canvas.draw()
-
-        # Switch focus to this tab
-        if self.results_panel_tabs:
-            for i in range(self.results_panel_tabs.count()):
-                if self.results_panel_tabs.tabText(i).startswith('🔧'):
-                    self.results_panel_tabs.setCurrentIndex(i)
-                    break
 
     def unlock_workflow_step(self, step_index: int, move_to_step: bool = False):
         if not self.workflow_tabs:
@@ -861,11 +705,10 @@ class NanoindentationGUI(QMainWindow):
             self.calibration_source = "Manual entry"
             self.calibration_file_path = None
             self.update_calibration_status()
-            self.show_calibration_reliability_plot()
             self.log_widget.append("✅ Manual calibration coefficients applied")
             self.update_readiness_summary()
             self.unlock_workflow_step(1, move_to_step=False)
-            self.status_bar.showMessage("Calibration applied. See 'Calibration Profile' tab on the right for reliability assessment.")
+            self.status_bar.showMessage("Calibration loaded. Review details in Step 1, then click Continue.")
         except Exception as e:
             QMessageBox.critical(self, "Calibration Error", f"Failed to apply manual coefficients:\n{str(e)}")
 
@@ -907,11 +750,10 @@ class NanoindentationGUI(QMainWindow):
             for key, widget in self.manual_coeff_inputs.items():
                 widget.setValue(self.calibration_coefficients.get(key, 0.0))
             self.update_calibration_status()
-            self.show_calibration_reliability_plot()
             self.update_readiness_summary()
             self.log_widget.append(f"✅ Calibration loaded from file: {file_path}")
             self.unlock_workflow_step(1, move_to_step=False)
-            self.status_bar.showMessage("Calibration loaded. See 'Calibration Profile' tab on the right for reliability assessment.")
+            self.status_bar.showMessage("Calibration applied. Review details in Step 1, then click Continue.")
         except Exception as e:
             QMessageBox.critical(self, "Calibration Error", f"Failed to load calibration file:\n{str(e)}")
 
@@ -968,10 +810,7 @@ class NanoindentationGUI(QMainWindow):
             self.status_bar.showMessage("Generating calibration from standard silica file...")
             calibration = self.nist_calibrator.extract_tip_coefficients_from_file(file_path, "fused_silica")
             if not calibration.get("valid", False):
-                errors_list = calibration.get("errors", [])
-                if not errors_list:
-                    errors_list = calibration.get("warnings", ["Unknown calibration failure"])
-                errors = "\n".join(errors_list)
+                errors = "\n".join(calibration.get("errors", ["Unknown error"]))
                 raise ValueError(errors)
 
             coeffs = self.get_default_calibration_coefficients()
@@ -996,7 +835,6 @@ class NanoindentationGUI(QMainWindow):
             for key, widget in self.manual_coeff_inputs.items():
                 widget.setValue(self.calibration_coefficients.get(key, 0.0))
             self.update_calibration_status()
-            self.show_calibration_reliability_plot()
             self.update_readiness_summary()
 
             r2 = calibration.get("quality_metrics", {}).get("r_squared", 0.0)
@@ -1103,137 +941,64 @@ class NanoindentationGUI(QMainWindow):
         layout = QVBoxLayout(panel)
         self.workflow_tabs = QTabWidget()
 
-        # STEP 1: Calibration — wrapped in a scroll area so nothing is hidden
-        step1_outer = QWidget()
-        step1_outer_layout = QVBoxLayout(step1_outer)
-        step1_outer_layout.setContentsMargins(0, 0, 0, 0)
-
-        step1_scroll = QScrollArea()
-        step1_scroll.setWidgetResizable(True)
-        step1_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        step1_scroll.setFrameShape(QFrame.NoFrame)
-
-        step1_inner = QWidget()
-        step1_layout = QVBoxLayout(step1_inner)
-        step1_layout.setSpacing(8)
-        step1_layout.setContentsMargins(6, 6, 6, 6)
-
+        # STEP 1: Calibration
+        step1 = QWidget()
+        step1_layout = QVBoxLayout(step1)
         step1_intro = QLabel(
-            "<b>Step 1 of 5 — Tip Area Function Calibration</b><br>"
-            "A(h<sub>c</sub>) converts contact depth to projected contact area "
-            "(ISO 14577-1:2015 §4.2). Choose one option:"
+            "Step 1 of 5: Calibration (required)\n"
+            "Question for researcher: Do you already have validated tip coefficients (C0..C8)?\n"
+            "• If yes: load calibration profile\n"
+            "• If no: generate from standard silica file\n"
+            "• Or manually enter coefficients from your lab protocol"
         )
         step1_intro.setWordWrap(True)
-        step1_intro.setTextFormat(Qt.RichText)
         step1_layout.addWidget(step1_intro)
 
-        # ── Option A ──────────────────────────────────────────────────────
-        load_group = QGroupBox("Option A — Load a previously saved calibration profile")
-        load_group_layout = QVBoxLayout(load_group)
-        load_group_layout.setSpacing(4)
-        lbl_a = QLabel(
-            "Use this when you have a validated .json or .csv file\n"
-            "from a prior session on a reference material (e.g. fused silica)."
-        )
-        lbl_a.setWordWrap(True)
-        load_group_layout.addWidget(lbl_a)
-        self.load_calibration_button = QPushButton("Load Calibration File  (.json / .csv)")
-        self.load_calibration_button.setToolTip("Load a JSON or CSV file containing C0...C8 coefficients.")
+        calibration_actions_layout = QHBoxLayout()
+        self.load_calibration_button = QPushButton("Load Calibration File")
         self.load_calibration_button.clicked.connect(self.load_calibration_file)
-        load_group_layout.addWidget(self.load_calibration_button)
-        step1_layout.addWidget(load_group)
+        calibration_actions_layout.addWidget(self.load_calibration_button)
 
-        # ── Option B ──────────────────────────────────────────────────────
-        gen_group = QGroupBox("Option B — Generate calibration from a reference indentation file")
-        gen_group_layout = QVBoxLayout(gen_group)
-        gen_group_layout.setSpacing(4)
-        lbl_b = QLabel(
-            "Use this when you have raw XLS/XLSX indentations on fused silica\n"
-            "(E = 72 GPa, v = 0.17). Coefficients C0...C8 are fitted automatically;\n"
-            "the same file is then re-analysed as a built-in self-check."
-        )
-        lbl_b.setWordWrap(True)
-        gen_group_layout.addWidget(lbl_b)
-        self.generate_calibration_button = QPushButton("Generate from Fused-Silica XLS/XLSX")
-        self.generate_calibration_button.setToolTip(
-            "Select an XLS/XLSX file of indentations on fused silica reference material.")
+        self.generate_calibration_button = QPushButton("Generate from Standard Silica XLS")
         self.generate_calibration_button.clicked.connect(self.generate_calibration_from_silica)
-        gen_group_layout.addWidget(self.generate_calibration_button)
-        step1_layout.addWidget(gen_group)
+        calibration_actions_layout.addWidget(self.generate_calibration_button)
+        step1_layout.addLayout(calibration_actions_layout)
 
-        # ── Option C ──────────────────────────────────────────────────────
-        manual_group = QGroupBox("Option C — Enter coefficients manually  (lab protocol / instrument software)")
+        manual_group = QGroupBox("Manual Calibration Entry (C0..C8)")
         manual_layout = QGridLayout(manual_group)
-        manual_layout.setSpacing(4)
-        manual_layout.setColumnStretch(1, 1)
-        manual_layout.setColumnStretch(3, 1)
-
-        coeff_tooltips = [
-            "C0 · hc2  —  primary term; ideal Berkovich = 24.5",
-            "C1 · hc   —  linear correction (tip rounding/blunting)",
-            "C2 · hc^0.5  —  dominant at shallow depths",
-            "C3 · hc^0.25",
-            "C4 · hc^0.125",
-            "C5 · hc^0.0625",
-            "C6 · hc^0.03125",
-            "C7 · hc^0.016",
-            "C8 · hc^0.008",
-        ]
-        # 2 coefficients per row → 5 rows (row 4 has only C8)
         for idx in range(9):
             key = f"C{idx}"
-            row, col_pair = divmod(idx, 2)
-            label = QLabel(f"<b>{key}</b>")
-            label.setTextFormat(Qt.RichText)
-            label.setToolTip(coeff_tooltips[idx])
-            label.setFixedWidth(26)
+            label = QLabel(f"{key}:")
             spin = QDoubleSpinBox()
-            spin.setDecimals(6)
+            spin.setDecimals(8)
             spin.setRange(-1e6, 1e6)
             spin.setSingleStep(0.1 if idx == 0 else 0.001)
             spin.setValue(self.calibration_coefficients.get(key, 0.0))
-            spin.setMinimumWidth(120)
-            spin.setToolTip(coeff_tooltips[idx])
             self.manual_coeff_inputs[key] = spin
-            manual_layout.addWidget(label, row, col_pair * 2)
-            manual_layout.addWidget(spin,  row, col_pair * 2 + 1)
+            manual_layout.addWidget(label, idx // 3, (idx % 3) * 2)
+            manual_layout.addWidget(spin, idx // 3, (idx % 3) * 2 + 1)
 
         manual_buttons_layout = QHBoxLayout()
-        self.apply_manual_button = QPushButton("Apply These Coefficients")
-        self.apply_manual_button.setToolTip("Apply values and display reliability chart on the right.")
+        self.apply_manual_button = QPushButton("Apply Manual Values")
         self.apply_manual_button.clicked.connect(self.apply_manual_coefficients)
         manual_buttons_layout.addWidget(self.apply_manual_button)
-        self.save_calibration_button = QPushButton("Save Profile to File")
-        self.save_calibration_button.setToolTip("Save active coefficients as .json or .csv for future sessions.")
+
+        self.save_calibration_button = QPushButton("Save Calibration Profile")
         self.save_calibration_button.clicked.connect(self.save_calibration_file)
         manual_buttons_layout.addWidget(self.save_calibration_button)
-        manual_layout.addLayout(manual_buttons_layout, 5, 0, 1, 4)
+        manual_layout.addLayout(manual_buttons_layout, 3, 0, 1, 6)
         step1_layout.addWidget(manual_group)
 
-        # ── Status summary ────────────────────────────────────────────────
-        status_group = QGroupBox("Active calibration summary")
-        status_group_layout = QVBoxLayout(status_group)
         self.calibration_status_text = QTextEdit()
         self.calibration_status_text.setReadOnly(True)
-        self.calibration_status_text.setFixedHeight(120)
-        self.calibration_status_text.setToolTip(
-            "Quality summary of the active tip area function. "
-            "See 'Calibration Profile' tab (right) for the full visual assessment.")
-        status_group_layout.addWidget(self.calibration_status_text)
-        step1_layout.addWidget(status_group)
+        self.calibration_status_text.setMinimumHeight(150)
+        step1_layout.addWidget(self.calibration_status_text)
         self.update_calibration_status()
 
-        step1_layout.addStretch()
-
-        step1_scroll.setWidget(step1_inner)
-        step1_outer_layout.addWidget(step1_scroll)
-
-        step1_next = QPushButton("Confirm Calibration and Continue to Step 2  ►")
-        step1_next.setToolTip("Proceed once you are satisfied with the calibration shown above.")
+        step1_next = QPushButton("Use Current Calibration and Continue ▶")
         step1_next.clicked.connect(self.confirm_current_calibration)
-        step1_outer_layout.addWidget(step1_next)
-
-        self.workflow_tabs.addTab(step1_outer, "1. Calibration")
+        step1_layout.addWidget(step1_next)
+        self.workflow_tabs.addTab(step1, "1. Calibration")
 
         # STEP 2: File selection
         step2 = QWidget()
@@ -1404,55 +1169,27 @@ class NanoindentationGUI(QMainWindow):
         """Create the results panel with tabs"""
         tab_widget = QTabWidget()
         self.results_panel_tabs = tab_widget
-
-        # Calibration profile tab — populated when calibration is applied
-        self.calibration_plot_widget = MatplotlibWidget()
-        tab_widget.addTab(self.calibration_plot_widget, "🔧 Calibration Profile")
-        self._draw_calibration_placeholder()
-
+        
         # Results table tab
         self.results_table = ResultsTableWidget()
         tab_widget.addTab(self.results_table, "📊 Results Table")
-
+        
         # Plot tabs container - this will hold subtabs for each test
         self.plots_tab_widget = QTabWidget()
-        tab_widget.addTab(self.plots_tab_widget, "📈 Test Plots")
-
+        tab_widget.addTab(self.plots_tab_widget, "📈 Plots")
+        
         # Log tab
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
+        # Use system monospace font with fallbacks
         log_font = QFont()
-        log_font.setFamily("Monaco")
-        log_font.setStyleHint(QFont.Monospace)
+        log_font.setFamily("Monaco")  # macOS monospace
+        log_font.setStyleHint(QFont.Monospace)  # Fallback to system monospace
         log_font.setPointSize(9)
         self.log_widget.setFont(log_font)
         tab_widget.addTab(self.log_widget, "📝 Analysis Log")
-
+        
         return tab_widget
-
-    def _draw_calibration_placeholder(self):
-        """Show an instructional placeholder in the calibration plot tab."""
-        if not self.calibration_plot_widget:
-            return
-        fig = self.calibration_plot_widget.figure
-        fig.clear()
-        ax = fig.add_subplot(111)
-        ax.axis('off')
-        ax.text(
-            0.5, 0.6,
-            "Calibration Profile",
-            ha='center', va='center', fontsize=18, fontweight='bold',
-            transform=ax.transAxes, color='#2c3e50'
-        )
-        ax.text(
-            0.5, 0.45,
-            "Load a calibration file or apply coefficients in Step 1\n"
-            "to see the tip area function, deviation from ideal Berkovich,\n"
-            "coefficient magnitudes, and an overall quality assessment.",
-            ha='center', va='center', fontsize=11,
-            transform=ax.transAxes, color='#555555'
-        )
-        self.calibration_plot_widget.canvas.draw()
     
     def get_stylesheet(self):
         """Return the application stylesheet - Dark Mode"""
@@ -1809,138 +1546,92 @@ class NanoindentationGUI(QMainWindow):
         self.log_widget.append(f"📊 Summary plot ready. Use Step 4 test buttons to open individual plots.")
     
     def create_summary_plot_tab(self, results: List[Dict[str, Any]]):
-        """Create a 4-panel reliability benchmark summary for all tests in the dataset."""
+        """Create a summary plot showing statistics for all tests"""
         summary_widget = MatplotlibWidget()
-
+        
         try:
+            summary_widget.figure.clear()
+            
+            # Create subplots for different statistics
             fig = summary_widget.figure
-            fig.clear()
-            fig.patch.set_facecolor('#f8f9fa')
-
             file_label = Path(self.current_analysis_file_path).name if self.current_analysis_file_path else (
                 results[0].get('Source File', 'selected file') if results else 'selected file'
             )
-            n_tests = len(results)
             fig.suptitle(
-                f'Analysis Reliability Benchmarks  —  {file_label}  ({n_tests} test(s))',
-                fontsize=13, fontweight='bold', y=0.99
+                f'Reliability Benchmarks - {file_label}',
+                fontsize=16,
+                fontweight='bold'
             )
-
+            
+            # Extract data for plotting
             hardness_values = [r.get('Hardness (GPa)', 0) for r in results if r.get('Hardness (GPa)')]
-            modulus_values  = [r.get('Oliver-Pharr Modulus (GPa)', 0) for r in results if r.get('Oliver-Pharr Modulus (GPa)')]
-            loading_r2      = [r.get('Loading R²', 0) for r in results if r.get('Loading R²')]
-            unloading_r2    = [r.get('Unloading Fit R²', 0) for r in results if r.get('Unloading Fit R²')]
-
+            modulus_values = [r.get('Oliver-Pharr Modulus (GPa)', 0) for r in results if r.get('Oliver-Pharr Modulus (GPa)')]
+            loading_r2 = [r.get('Loading R²', 0) for r in results if r.get('Loading R²')]
+            unloading_r2 = [r.get('Unloading Fit R²', 0) for r in results if r.get('Unloading Fit R²')]
+            
+            # Create 2x2 subplot layout
             ax1 = fig.add_subplot(2, 2, 1)
             ax2 = fig.add_subplot(2, 2, 2)
             ax3 = fig.add_subplot(2, 2, 3)
             ax4 = fig.add_subplot(2, 2, 4)
-
-            # ── Hardness distribution ─────────────────────────────────────
+            
+            # Hardness histogram
             if hardness_values:
-                ax1.hist(hardness_values, bins=min(10, len(hardness_values)),
-                         alpha=0.72, color='#2980b9', edgecolor='white')
-                mu_h, sd_h = np.mean(hardness_values), np.std(hardness_values)
-                ax1.axvline(mu_h, color='#e74c3c', linewidth=1.8, linestyle='--', label=f'Mean {mu_h:.2f} GPa')
-                ax1.set_xlabel('Hardness  H  (GPa)  [ISO 14577-1 §4.1]')
-                ax1.set_ylabel('Number of tests')
-                ax1.set_title(
-                    f'Hardness Distribution\n'
-                    f'Mean {mu_h:.2f} ± {sd_h:.2f} GPa   CV = {sd_h/mu_h*100:.1f} %' if mu_h else
-                    'Hardness Distribution', fontweight='bold'
-                )
-                ax1.legend(fontsize=8)
+                ax1.hist(hardness_values, bins=min(10, len(hardness_values)), alpha=0.7, color='blue', edgecolor='black')
+                ax1.set_xlabel('Hardness (GPa)')
+                ax1.set_ylabel('Frequency')
+                ax1.set_title(f'Hardness Distribution\n(μ={np.mean(hardness_values):.2f}±{np.std(hardness_values):.2f} GPa)')
                 ax1.grid(True, alpha=0.3)
-            else:
-                ax1.text(0.5, 0.5, 'No hardness data', ha='center', va='center',
-                         transform=ax1.transAxes, color='grey')
-                ax1.set_title('Hardness Distribution', fontweight='bold')
-
-            # ── Reduced modulus distribution ──────────────────────────────
+            
+            # Modulus histogram
             if modulus_values:
-                ax2.hist(modulus_values, bins=min(10, len(modulus_values)),
-                         alpha=0.72, color='#27ae60', edgecolor='white')
-                mu_e, sd_e = np.mean(modulus_values), np.std(modulus_values)
-                ax2.axvline(mu_e, color='#e74c3c', linewidth=1.8, linestyle='--', label=f'Mean {mu_e:.1f} GPa')
-                ax2.set_xlabel('Reduced Modulus  Er  (GPa)  [ISO 14577-1 §4.2]')
-                ax2.set_ylabel('Number of tests')
-                ax2.set_title(
-                    f'Reduced Modulus Distribution\n'
-                    f'Mean {mu_e:.1f} ± {sd_e:.1f} GPa   CV = {sd_e/mu_e*100:.1f} %' if mu_e else
-                    'Reduced Modulus Distribution', fontweight='bold'
-                )
-                ax2.legend(fontsize=8)
+                ax2.hist(modulus_values, bins=min(10, len(modulus_values)), alpha=0.7, color='green', edgecolor='black')
+                ax2.set_xlabel('Modulus (GPa)')
+                ax2.set_ylabel('Frequency')
+                ax2.set_title(f'Modulus Distribution\n(μ={np.mean(modulus_values):.1f}±{np.std(modulus_values):.1f} GPa)')
                 ax2.grid(True, alpha=0.3)
-            else:
-                ax2.text(0.5, 0.5, 'No modulus data', ha='center', va='center',
-                         transform=ax2.transAxes, color='grey')
-                ax2.set_title('Reduced Modulus Distribution', fontweight='bold')
-
-            # ── Loading curve fit quality (R²) ────────────────────────────
+            
+            # Loading R² values
             if loading_r2:
-                idx_list = list(range(1, len(loading_r2) + 1))
-                colors_l = ['#e74c3c' if v < 0.99 else '#2980b9' for v in loading_r2]
-                ax3.bar(idx_list, loading_r2, color=colors_l, width=0.7, edgecolor='none')
-                ax3.axhline(0.99, color='orange', linestyle='--', linewidth=1.2, label='R² = 0.99 threshold')
-                ax3.axhline(1.00, color='black',  linestyle='-',  linewidth=0.6, alpha=0.4)
-                ax3.set_xlabel('Test index')
-                ax3.set_ylabel('Loading curve  R²')
-                ax3.set_title(
-                    f'Loading Fit Quality  (R²)\n'
-                    f'Mean {np.mean(loading_r2):.4f}   Min {np.min(loading_r2):.4f}'
-                    f'   {"✓ all ≥ 0.99" if all(v >= 0.99 for v in loading_r2) else "⚠ some below 0.99"}',
-                    fontweight='bold'
-                )
-                ax3.set_ylim(max(0.95, min(loading_r2) - 0.01), 1.002)
-                ax3.legend(fontsize=8)
-                ax3.grid(True, alpha=0.3, axis='y')
-            else:
-                ax3.text(0.5, 0.5, 'No loading R² data', ha='center', va='center',
-                         transform=ax3.transAxes, color='grey')
-                ax3.set_title('Loading Fit Quality', fontweight='bold')
-
-            # ── Unloading curve fit quality (R²) ──────────────────────────
+                test_indices = list(range(1, len(loading_r2) + 1))
+                ax3.plot(test_indices, loading_r2, 'bo-', markersize=4, linewidth=1)
+                ax3.set_xlabel('Test Number')
+                ax3.set_ylabel('Loading R²')
+                ax3.set_title(f'Loading curve fit reliability (R²)\n(μ={np.mean(loading_r2):.4f})')
+                ax3.grid(True, alpha=0.3)
+                ax3.set_ylim(0.98, 1.002)
+            
+            # Unloading R² values
             if unloading_r2:
-                idx_list = list(range(1, len(unloading_r2) + 1))
-                colors_u = ['#e74c3c' if v < 0.99 else '#e67e22' for v in unloading_r2]
-                ax4.bar(idx_list, unloading_r2, color=colors_u, width=0.7, edgecolor='none')
-                ax4.axhline(0.99, color='steelblue', linestyle='--', linewidth=1.2, label='R² = 0.99 threshold')
-                ax4.axhline(1.00, color='black',     linestyle='-',  linewidth=0.6, alpha=0.4)
-                ax4.set_xlabel('Test index')
-                ax4.set_ylabel('Unloading curve  R²  (Oliver-Pharr fit)')
-                ax4.set_title(
-                    f'Unloading Fit Quality  (R²)  [ISO 14577-1 §A.8]\n'
-                    f'Mean {np.mean(unloading_r2):.4f}   Min {np.min(unloading_r2):.4f}'
-                    f'   {"✓ all ≥ 0.99" if all(v >= 0.99 for v in unloading_r2) else "⚠ some below 0.99"}',
-                    fontweight='bold'
-                )
-                ax4.set_ylim(max(0.95, min(unloading_r2) - 0.01), 1.002)
-                ax4.legend(fontsize=8)
-                ax4.grid(True, alpha=0.3, axis='y')
-            else:
-                ax4.text(0.5, 0.5, 'No unloading R² data', ha='center', va='center',
-                         transform=ax4.transAxes, color='grey')
-                ax4.set_title('Unloading Fit Quality', fontweight='bold')
-
+                test_indices = list(range(1, len(unloading_r2) + 1))
+                ax4.plot(test_indices, unloading_r2, 'ro-', markersize=4, linewidth=1)
+                ax4.set_xlabel('Test Number')
+                ax4.set_ylabel('Unloading R²')
+                ax4.set_title(f'Unloading curve fit reliability (R²)\n(μ={np.mean(unloading_r2):.4f})')
+                ax4.grid(True, alpha=0.3)
+                ax4.set_ylim(0.98, 1.002)
+            
+            # Adjust layout
             fig.text(
-                0.5, 0.005,
-                "Red bars = R² below 0.99 threshold.  "
-                "High CV (>10 %) in H or Er may indicate surface roughness, indentation size effect, or pile-up.",
-                ha='center', fontsize=8, color='#555555'
+                0.5, 0.01,
+                "Purpose: assess whether loading/unloading fit quality and property distributions are reliable.",
+                ha='center', fontsize=9
             )
             fig.tight_layout(rect=[0, 0.03, 1, 0.97])
             summary_widget.canvas.draw()
-
+            
         except Exception as e:
+            # Error handling for summary plot
             summary_widget.figure.clear()
             ax = summary_widget.figure.add_subplot(111)
-            ax.text(0.5, 0.5, f'Error creating summary plot:\n{str(e)}',
-                    transform=ax.transAxes, ha='center', va='center',
-                    bbox=dict(boxstyle='round,pad=0.5', facecolor='salmon', alpha=0.7))
+            ax.text(0.5, 0.5, f'Error creating summary plot:\n{str(e)}', 
+                   transform=ax.transAxes, ha='center', va='center',
+                   bbox=dict(boxstyle='round,pad=0.5', facecolor='red', alpha=0.7))
             ax.set_title("Summary Plot Error")
             summary_widget.canvas.draw()
-
-        self.plots_tab_widget.addTab(summary_widget, "📊 Reliability Summary")
+        
+        # Add summary tab first
+        self.plots_tab_widget.addTab(summary_widget, "📊 Summary")
     
     def browse_file(self):
         """Open file dialog to select Excel file"""
@@ -2099,6 +1790,10 @@ class NanoindentationGUI(QMainWindow):
             loading_fit_disp = []
             loading_fit_load = []
             loading_r2_value = curve.get('r_squared', 0.0)
+            fit_fraction = max(0.05, min(
+                (self.fit_curve_percent_spinbox.value() / 100.0) if self.fit_curve_percent_spinbox else 0.25,
+                1.0
+            ))
             if raw_loading_disp and raw_loading_load and len(raw_loading_disp) >= 4:
                 h_loading = np.asarray(raw_loading_disp, dtype=float)
                 p_loading = np.asarray(raw_loading_load, dtype=float)
@@ -2106,25 +1801,19 @@ class NanoindentationGUI(QMainWindow):
                 h_loading = h_loading[valid_loading]
                 p_loading = p_loading[valid_loading]
                 if h_loading.size >= 4 and np.max(h_loading) > 0:
-                    # Use all loading points so the loading fit covers the complete loading curve.
-                    h_loading_fit_segment = h_loading
-                    p_loading_fit_segment = p_loading
+                    fit_points = max(4, int(np.ceil(h_loading.size * fit_fraction)))
+                    h_loading_fit_segment = h_loading[-fit_points:]
+                    p_loading_fit_segment = p_loading[-fit_points:]
+                    h_fit_loading = np.linspace(0.0, float(np.max(h_loading)), 160)
+                    # Fit loading with a 3rd-order polynomial on the selected upper segment
+                    # and enforce extrapolation to P=0 at h=0.
                     coeff_loading = np.polyfit(h_loading_fit_segment, p_loading_fit_segment, 3)
-                    
-                    # Find the y=0 intercept (where polynomial crosses P=0)
-                    roots = np.roots(coeff_loading)
-                    real_positive_roots = roots[np.isreal(roots) & (roots.real > 0)].real
-                    h_intercept = float(np.min(real_positive_roots)) if len(real_positive_roots) > 0 else 0.0
-                    
-                    # Extend loading fit from y=0 intercept to max displacement
-                    h_min_extended = max(h_intercept, 0.0)
-                    h_max_extended = float(np.max(h_loading_fit_segment))
-                    h_fit_loading = np.linspace(h_min_extended, h_max_extended, 160)
-                    
                     p_fit_loading = np.polyval(coeff_loading, h_fit_loading)
+                    intercept_at_zero = float(np.polyval(coeff_loading, 0.0))
+                    p_fit_loading = p_fit_loading - intercept_at_zero
                     loading_fit_disp = h_fit_loading.tolist()
                     loading_fit_load = np.maximum(p_fit_loading, 0.0).tolist()
-                    p_pred_segment = np.polyval(coeff_loading, h_loading_fit_segment)
+                    p_pred_segment = np.polyval(coeff_loading, h_loading_fit_segment) - intercept_at_zero
                     ss_res = float(np.sum((p_loading_fit_segment - p_pred_segment) ** 2))
                     ss_tot = float(np.sum((p_loading_fit_segment - np.mean(p_loading_fit_segment)) ** 2))
                     loading_r2_value = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
@@ -2134,12 +1823,7 @@ class NanoindentationGUI(QMainWindow):
             if raw_unloading_disp:
                 h_unloading = np.asarray(raw_unloading_disp, dtype=float)
                 p_fit_unloading = np.asarray(curve.get('fitted_curve', []), dtype=float)
-                h_fit_segment = np.asarray(curve.get('fit_displacement', []), dtype=float)
-                p_fit_segment = np.asarray(curve.get('fit_curve', []), dtype=float)
-                if h_fit_segment.size == p_fit_segment.size and h_fit_segment.size > 0:
-                    unloading_fit_disp = h_fit_segment.tolist()
-                    unloading_fit_load = np.maximum(p_fit_segment, 0.0).tolist()
-                elif p_fit_unloading.size == h_unloading.size and p_fit_unloading.size > 0:
+                if p_fit_unloading.size == h_unloading.size and p_fit_unloading.size > 0:
                     unloading_fit_disp = h_unloading.tolist()
                     unloading_fit_load = np.maximum(p_fit_unloading, 0.0).tolist()
 

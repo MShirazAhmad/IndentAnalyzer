@@ -14,7 +14,7 @@ import warnings
 try:
     from ..core.standards import ISO14577Constants, AnalysisConfig
 except ImportError:
-    from ..core.standards import ISO14577Constants, AnalysisConfig
+    from core.standards import ISO14577Constants, AnalysisConfig
 
 
 class CurveFitter:
@@ -86,12 +86,15 @@ class CurveFitter:
             results['errors'].append("Insufficient data points for curve fitting")
             return results
         
-        # Use upper portion of unloading curve (ISO standard)
-        n_points = len(displacement)
-        start_idx = int(n_points * (1 - self.iso.STIFFNESS_RANGE_PERCENT))
+        # Check if unloading data is in reverse order (high to low displacement)
+        # and invert if necessary for proper fitting
+        displacement, load = self._normalize_unloading_order(displacement, load)
         
-        h_fit = displacement[start_idx:]
-        P_fit = load[start_idx:]
+        # Use upper-load portion of unloading curve (highest loads near Pmax).
+        # This is the initial elastic unloading segment used by ISO/NIST workflows.
+        h_fit, P_fit = self._select_upper_unloading_segment(
+            displacement, load, self.iso.STIFFNESS_RANGE_PERCENT
+        )
         
         if len(h_fit) < 3:
             results['errors'].append("Insufficient points in fitting range")
@@ -116,6 +119,40 @@ class CurveFitter:
             results['errors'].append(f"Curve fitting failed: {str(e)}")
         
         return results
+    
+    @staticmethod
+    def _normalize_unloading_order(displacement: np.ndarray, load: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Normalize unloading data order: ensure displacement goes from low to high.
+        If data is in reverse order (high to low), invert it.
+        
+        Returns:
+            Tuple of (displacement, load) in ascending displacement order
+        """
+        # Check if displacement is in descending order (reverse order)
+        if len(displacement) > 1 and displacement[0] > displacement[-1]:
+            # Reverse both arrays to normalize
+            return displacement[::-1], load[::-1]
+        return displacement, load
+
+    @staticmethod
+    def _select_upper_unloading_segment(displacement: np.ndarray, load: np.ndarray,
+                                        fraction: float) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Select the highest-load fraction of unloading data.
+        Robust to input order by selecting points via load ranking, then sorting by displacement.
+        """
+        n_points = len(displacement)
+        fraction = min(max(float(fraction), 0.05), 1.0)
+        n_select = max(3, int(np.ceil(n_points * fraction)))
+
+        top_load_indices = np.argsort(load)[-n_select:]
+        h_sel = displacement[top_load_indices]
+        P_sel = load[top_load_indices]
+
+        # Sort for stable fitting and consistent reporting
+        order = np.argsort(h_sel)
+        return h_sel[order], P_sel[order]
     
     def _get_theoretical_exponent(self, tip_geometry: str) -> float:
         """Get theoretical power law exponent m from NIST Guide Table 1"""
@@ -171,13 +208,26 @@ class CurveFitter:
             
             A_fit, h_f_fit, m_fit = popt
             
-            # Calculate fitted curve for full displacement range
-            P_fitted = self.oliver_pharr_unloading(h_full, A_fit, h_f_fit, m_fit)
+            # Create proper displacement range for fitted curve display
+            # Extend from max displacement down to h_f (residual depth where P=0)
+            h_max = np.max(h_full)
+            # Generate smooth range for better visualization
+            h_display_range = np.linspace(h_max, max(h_f_fit * 0.95, 0), 100)
             
-            # Calculate R-squared
-            ss_res = np.sum((P_full - P_fitted) ** 2)
-            ss_tot = np.sum((P_full - np.mean(P_full)) ** 2)
-            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            # Calculate fitted curve for full displacement range and display range
+            P_fitted = self.oliver_pharr_unloading(h_full, A_fit, h_f_fit, m_fit)
+            P_fitted_display = self.oliver_pharr_unloading(h_display_range, A_fit, h_f_fit, m_fit)
+            # Fit-segment curve (the actual region used for parameter estimation)
+            P_fitted_segment = self.oliver_pharr_unloading(h_fit, A_fit, h_f_fit, m_fit)
+            
+            # Calculate R-squared on both fit segment and full unloading curve.
+            # Acceptance uses fit-segment R² to match the fitted data region.
+            ss_res_segment = np.sum((P_fit - P_fitted_segment) ** 2)
+            ss_tot_segment = np.sum((P_fit - np.mean(P_fit)) ** 2)
+            r_squared = 1 - (ss_res_segment / ss_tot_segment) if ss_tot_segment > 0 else 0
+            ss_res_full = np.sum((P_full - P_fitted) ** 2)
+            ss_tot_full = np.sum((P_full - np.mean(P_full)) ** 2)
+            r_squared_full = 1 - (ss_res_full / ss_tot_full) if ss_tot_full > 0 else 0
             
             # Check fitting quality
             if r_squared >= self.iso.MIN_R_SQUARED:
@@ -185,12 +235,18 @@ class CurveFitter:
                     'success': True,
                     'parameters': {'A': A_fit, 'h_f': h_f_fit, 'm': m_fit},
                     'r_squared': r_squared,
-                    'fitted_curve': P_fitted,
+                    'r_squared_full': r_squared_full,
+                    'fitted_curve': P_fitted_display,
+                    'fit_displacement': h_display_range,
+                    'fit_curve': P_fitted_segment,
                     'residuals': P_full - P_fitted,
                     'parameter_errors': np.sqrt(np.diag(pcov))
                 })
             else:
-                results['errors'] = [f"Poor fit quality: R² = {r_squared:.4f} < {self.iso.MIN_R_SQUARED}"]
+                results['errors'] = [
+                    f"Poor fit quality: fit-segment R² = {r_squared:.4f} < {self.iso.MIN_R_SQUARED} "
+                    f"(full-curve R² = {r_squared_full:.4f})"
+                ]
         
         except Exception as e:
             results['errors'] = [f"Oliver-Pharr fitting failed: {str(e)}"]
@@ -227,25 +283,43 @@ class CurveFitter:
             
             h_f_fit, m_fit = popt
             
+            # Create proper displacement range for fitted curve display
+            # Extend from max displacement down to h_f (residual depth where P=0)
+            h_max = np.max(h_full)
+            # Generate smooth range for better visualization
+            h_display_range = np.linspace(h_max, max(h_f_fit * 0.95, 0), 100)
+            
             # Calculate fitted curve
             P_fitted = self.power_law_unloading(h_full, P_max, h_f_fit, m_fit)
+            P_fitted_display = self.power_law_unloading(h_display_range, P_max, h_f_fit, m_fit)
+            P_fitted_segment = self.power_law_unloading(h_fit, P_max, h_f_fit, m_fit)
             
-            # Calculate R-squared
-            ss_res = np.sum((P_full - P_fitted) ** 2)
-            ss_tot = np.sum((P_full - np.mean(P_full)) ** 2)
-            r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+            # Calculate R-squared on both fit segment and full unloading curve.
+            # Acceptance uses fit-segment R² to match the fitted data region.
+            ss_res_segment = np.sum((P_fit - P_fitted_segment) ** 2)
+            ss_tot_segment = np.sum((P_fit - np.mean(P_fit)) ** 2)
+            r_squared = 1 - (ss_res_segment / ss_tot_segment) if ss_tot_segment > 0 else 0
+            ss_res_full = np.sum((P_full - P_fitted) ** 2)
+            ss_tot_full = np.sum((P_full - np.mean(P_full)) ** 2)
+            r_squared_full = 1 - (ss_res_full / ss_tot_full) if ss_tot_full > 0 else 0
             
             if r_squared >= self.iso.MIN_R_SQUARED:
                 results.update({
                     'success': True,
                     'parameters': {'P_max': P_max, 'h_f': h_f_fit, 'm': m_fit},
                     'r_squared': r_squared,
-                    'fitted_curve': P_fitted,
+                    'r_squared_full': r_squared_full,
+                    'fitted_curve': P_fitted_display,
+                    'fit_displacement': h_display_range,
+                    'fit_curve': P_fitted_segment,
                     'residuals': P_full - P_fitted,
                     'parameter_errors': np.sqrt(np.diag(pcov))
                 })
             else:
-                results['errors'] = [f"Poor fit quality: R² = {r_squared:.4f} < {self.iso.MIN_R_SQUARED}"]
+                results['errors'] = [
+                    f"Poor fit quality: fit-segment R² = {r_squared:.4f} < {self.iso.MIN_R_SQUARED} "
+                    f"(full-curve R² = {r_squared_full:.4f})"
+                ]
         
         except Exception as e:
             results['errors'] = [f"Power law fitting failed: {str(e)}"]
@@ -323,12 +397,10 @@ class LinearFitter:
         if len(displacement) < 3 or len(load) < 3:
             return results
         
-        # Use upper portion of curve
-        n_points = len(displacement)
-        start_idx = int(n_points * (1 - fit_range))
-        
-        h_fit = displacement[start_idx:]
-        P_fit = load[start_idx:]
+        # Use the same highest-load selection strategy as nonlinear fitting.
+        h_fit, P_fit = CurveFitter._select_upper_unloading_segment(
+            displacement, load, fit_range
+        )
         
         if len(h_fit) < 2:
             return results
@@ -359,7 +431,7 @@ class AreaFunction:
         try:
             from ..core.standards import AreaFunctionCoefficients
         except ImportError:
-            from ..core.standards import AreaFunctionCoefficients
+            from core.standards import AreaFunctionCoefficients
         self.coefficients = coefficients or AreaFunctionCoefficients.PERFECT_BERKOVICH
     
     def calculate_contact_area(self, contact_depth: float) -> float:
