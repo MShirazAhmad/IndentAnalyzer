@@ -248,10 +248,11 @@ class CurveFitter:
             A_fit, h_f_fit, m_fit = popt
             
             # Create proper displacement range for fitted curve display
-            # Extend from max displacement down to h_f (residual depth where P=0)
+            # Extend from max displacement down to min displacement of actual unloading data
             h_max = np.max(h_full)
-            # Generate smooth range for better visualization
-            h_display_range = np.linspace(h_max, max(h_f_fit * 0.95, 0), 100)
+            h_min = np.min(h_full)  # Use actual minimum from data
+            # Generate smooth range covering entire unloading data
+            h_display_range = np.linspace(h_max, h_min, 200)
             
             # Calculate fitted curve for full displacement range and display range
             P_fitted = self.oliver_pharr_unloading(h_full, A_fit, h_f_fit, m_fit)
@@ -332,10 +333,11 @@ class CurveFitter:
             h_f_fit, m_fit = popt
             
             # Create proper displacement range for fitted curve display
-            # Extend from max displacement down to h_f (residual depth where P=0)
+            # Extend from max displacement down to min displacement of actual unloading data
             h_max = np.max(h_full)
-            # Generate smooth range for better visualization
-            h_display_range = np.linspace(h_max, max(h_f_fit * 0.95, 0), 100)
+            h_min = np.min(h_full)  # Use actual minimum from data
+            # Generate smooth range covering entire unloading data
+            h_display_range = np.linspace(h_max, h_min, 200)
             
             # Calculate fitted curve
             P_fitted = self.power_law_unloading(h_full, P_max, h_f_fit, m_fit)
