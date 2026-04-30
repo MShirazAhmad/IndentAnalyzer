@@ -2112,6 +2112,7 @@ class NanoindentationGUI(QMainWindow):
             loading_fit_disp = []
             loading_fit_load = []
             loading_r2_value = curve.get('r_squared', 0.0)
+            loading_offset = 0.0
             if raw_loading_disp and raw_loading_load and len(raw_loading_disp) >= 4:
                 h_loading = np.asarray(raw_loading_disp, dtype=float)
                 p_loading = np.asarray(raw_loading_load, dtype=float)
@@ -2120,7 +2121,7 @@ class NanoindentationGUI(QMainWindow):
                 p_loading = p_loading[valid_loading]
                 if h_loading.size >= 4 and np.max(h_loading) > 0:
                     # Use all loading points so the loading fit covers the complete loading curve.
-                    h_loading_fit_segment = h_loading
+                    h_loading_fit_segment = h_loading.copy()
                     p_loading_fit_segment = p_loading
                     coeff_loading = np.polyfit(h_loading_fit_segment, p_loading_fit_segment, 3)
                     
@@ -2129,8 +2130,15 @@ class NanoindentationGUI(QMainWindow):
                     real_positive_roots = roots[np.isreal(roots) & (roots.real > 0)].real
                     h_intercept = float(np.min(real_positive_roots)) if len(real_positive_roots) > 0 else 0.0
                     
-                    # Extend loading fit from y=0 intercept to max displacement
-                    h_min_extended = max(h_intercept, 0.0)
+                    # Apply offset correction: if curve crosses y=0 at h > 0, shift displacement to origin
+                    if h_intercept > 0:
+                        loading_offset = h_intercept
+                        h_loading_fit_segment = h_loading_fit_segment - loading_offset
+                        # Refit with offset-corrected displacement
+                        coeff_loading = np.polyfit(h_loading_fit_segment, p_loading_fit_segment, 3)
+                    
+                    # Extend loading fit from y=0 to max displacement
+                    h_min_extended = 0.0
                     h_max_extended = float(np.max(h_loading_fit_segment))
                     h_fit_loading = np.linspace(h_min_extended, h_max_extended, 160)
                     
@@ -2141,6 +2149,10 @@ class NanoindentationGUI(QMainWindow):
                     ss_res = float(np.sum((p_loading_fit_segment - p_pred_segment) ** 2))
                     ss_tot = float(np.sum((p_loading_fit_segment - np.mean(p_loading_fit_segment)) ** 2))
                     loading_r2_value = (1.0 - (ss_res / ss_tot)) if ss_tot > 0 else 0.0
+            
+            # Apply offset to raw loading displacement data
+            if loading_offset > 0 and raw_loading_disp:
+                raw_loading_disp = [max(x - loading_offset, 0.0) for x in raw_loading_disp]
 
             unloading_fit_disp = []
             unloading_fit_load = []
