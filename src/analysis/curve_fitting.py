@@ -90,26 +90,18 @@ class CurveFitter:
         # and invert if necessary for proper fitting
         displacement, load = self._normalize_unloading_order(displacement, load)
         
-        # Use upper-load portion of unloading curve (highest loads near Pmax).
-        # This is the initial elastic unloading segment used by ISO/NIST workflows.
-        h_fit, P_fit = self._select_upper_unloading_segment(
-            displacement, load, self.iso.STIFFNESS_RANGE_PERCENT
-        )
-        
-        if len(h_fit) < 3:
-            results['errors'].append("Insufficient points in fitting range")
-            return results
-        
+        # Fit to the entire unloading curve data (not just upper portion)
+        # This ensures the fitted model represents the full unloading behavior
         try:
             if method == 'oliver_pharr':
-                results.update(self._fit_oliver_pharr(h_fit, P_fit, displacement, load))
+                results.update(self._fit_oliver_pharr(displacement, load, displacement, load))
             elif method == 'power_law':
-                results.update(self._fit_power_law(h_fit, P_fit, displacement, load))
+                results.update(self._fit_power_law(displacement, load, displacement, load))
             else:
                 results['errors'].append(f"Unknown fitting method: {method}")
                 return results
             
-            # Calculate stiffness and contact depth
+            # Calculate stiffness and contact depth using the fitted parameters
             if results['success']:
                 results.update(self._calculate_contact_properties(
                     displacement, load, results['parameters'], method
