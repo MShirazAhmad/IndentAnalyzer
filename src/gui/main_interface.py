@@ -388,6 +388,13 @@ class MatplotlibWidget(QWidget):
             if unloading_fit_disp and unloading_fit_load:
                 ax.plot(unloading_fit_disp, unloading_fit_load, 'r--', linewidth=1.8, alpha=0.9, label='Unloading fit')
                 has_curve_data = True
+            
+            # Plot tangent line (stiffness line at peak load) if available
+            tangent_disp = test_data.get('Tangent Displacement (nm)', [])
+            tangent_load = test_data.get('Tangent Load (mN)', [])
+            if tangent_disp and tangent_load:
+                ax.plot(tangent_disp, tangent_load, 'g-', linewidth=2.0, alpha=0.8, label='Tangent (Stiffness)')
+                has_curve_data = True
 
             # Try to get actual curve data from the analyzer
             test_number = test_data.get('Test', 'N/A')
@@ -417,6 +424,12 @@ class MatplotlibWidget(QWidget):
                         if 'unloading_fit_displacement' in curve_info and 'unloading_fit_load' in curve_info:
                             ax.plot(curve_info['unloading_fit_displacement'], curve_info['unloading_fit_load'], 
                                    'r--', linewidth=1.8, label='Unloading fit', alpha=0.9)
+                            has_curve_data = True
+                        
+                        # Plot tangent line if available (stiffness line at peak load)
+                        if 'tangent_displacement' in curve_info and 'tangent_load' in curve_info:
+                            ax.plot(curve_info['tangent_displacement'], curve_info['tangent_load'],
+                                   'g-', linewidth=2.0, label='Tangent (Stiffness)', alpha=0.8)
                             has_curve_data = True
                         
                         break
@@ -2168,6 +2181,16 @@ class NanoindentationGUI(QMainWindow):
                     elif abs(float(unloading_fit_disp[-1]) - h_f) > 1e-9:
                         unloading_fit_disp.append(h_f)
                         unloading_fit_load.append(0.0)
+            
+            # Extract tangent line data (stiffness line at peak load)
+            tangent_disp = []
+            tangent_load = []
+            if 'tangent_displacement' in curve and 'tangent_load' in curve:
+                h_tangent = np.asarray(curve.get('tangent_displacement', []), dtype=float)
+                p_tangent = np.asarray(curve.get('tangent_load', []), dtype=float)
+                if h_tangent.size == p_tangent.size and h_tangent.size > 0:
+                    tangent_disp = h_tangent.tolist()
+                    tangent_load = np.maximum(p_tangent, 0.0).tolist()
 
             normalized.append({
                 'Test': test_name,
@@ -2189,6 +2212,8 @@ class NanoindentationGUI(QMainWindow):
                 'Loading Fit Load (mN)': loading_fit_load,
                 'Unloading Fit Displacement (nm)': unloading_fit_disp,
                 'Unloading Fit Load (mN)': unloading_fit_load,
+                'Tangent Displacement (nm)': tangent_disp,
+                'Tangent Load (mN)': tangent_load,
                 'Analysis Success': True
             })
 
