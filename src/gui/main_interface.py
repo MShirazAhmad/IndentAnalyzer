@@ -2193,6 +2193,13 @@ class NanoindentationGUI(QMainWindow):
                     elif abs(float(unloading_fit_disp[-1]) - h_f) > 1e-9:
                         unloading_fit_disp.append(h_f)
                         unloading_fit_load.append(0.0)
+                
+                # Apply offset to unloading data (same offset as loading curve)
+                if loading_offset > 0:
+                    h_unloading_adjusted = np.asarray(raw_unloading_disp, dtype=float) - loading_offset
+                    raw_unloading_disp = np.maximum(h_unloading_adjusted, 0.0).tolist()
+                    if unloading_fit_disp:
+                        unloading_fit_disp = np.maximum(np.asarray(unloading_fit_disp) - loading_offset, 0.0).tolist()
             
             # Extract tangent line data (stiffness line at peak load)
             tangent_disp = []
@@ -2203,6 +2210,9 @@ class NanoindentationGUI(QMainWindow):
                 if h_tangent.size == p_tangent.size and h_tangent.size > 0:
                     tangent_disp = h_tangent.tolist()
                     tangent_load = np.maximum(p_tangent, 0.0).tolist()
+                    # Apply offset to tangent line
+                    if loading_offset > 0:
+                        tangent_disp = np.maximum(np.asarray(tangent_disp) - loading_offset, 0.0).tolist()
 
             normalized.append({
                 'Test': test_name,
