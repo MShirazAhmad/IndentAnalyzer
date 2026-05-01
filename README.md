@@ -1,130 +1,61 @@
 # IndentAnalyzer
 
-**IndentAnalyzer** is a PyQt5-based nanoindentation analysis application written for Excel data exported from an **Agilent Nano Indenter G200 system (MTS Nano Instruments, Oak Ridge, TN, USA)**. It provides a guided workflow for Oliver–Pharr analysis, including tip-area calibration, sample-file loading, analysis settings, result review, individual test inspection, test exclusion, and export of final results.
+**IndentAnalyzer** is a graphical nanoindentation analysis tool written for Excel data exported from an **Agilent Nano Indenter G200 system (MTS Nano Instruments, Oak Ridge, TN, USA)**. It guides the user through tip-area calibration, sample-file loading, Oliver–Pharr analysis, result review, individual test inspection, test exclusion, and final reporting.
 
-This README is intended for GitHub users who want to install the project, open the interface, understand the workflow, and reproduce the analysis shown in the screenshots.
 
 ---
 
-## 1. What This Project Does
+## 1. What This Tool Does
 
-IndentAnalyzer processes instrumented nanoindentation load–displacement data and calculates:
+IndentAnalyzer analyzes instrumented nanoindentation load–displacement data and reports:
 
-- indentation hardness,
+- hardness,
 - reduced modulus,
-- Oliver–Pharr sample modulus,
+- sample elastic modulus,
 - loading and unloading fit quality,
-- per-test result tables,
+- per-indent result tables,
 - reliability statistics,
-- publication-ready summary values.
+- final mean ± standard deviation values.
 
-The application is designed around data files exported from the **Agilent Nano Indenter G200**. Other nanoindenter export formats may require edits to the data-loading or column-mapping logic.
-
----
-
-## 2. Main Features
-
-- Graphical PyQt5 interface
-- Agilent G200 Excel file loading (`.xls`, `.xlsx`)
-- Fused-silica calibration workflow
-- Manual tip-area coefficient entry
-- Oliver–Pharr unloading fit
-- Per-test hardness and modulus calculation
-- Test-by-test curve visualization
-- Inclusion/exclusion control for individual indents
-- Reliability plots and summary statistics
-- CSV/Excel result export
-- Analysis log for reproducibility
+The tool is designed for files exported from the **Agilent Nano Indenter G200**. Data from other nanoindenters may not load correctly unless the file format is adapted.
 
 ---
 
-## 3. Repository Layout
+## 2. What You Need Before Starting
+
+Before using the software, prepare:
+
+1. A fused-silica calibration file exported from the Agilent G200.
+2. One or more unknown sample indentation files exported from the Agilent G200.
+3. The sample Poisson ratio used for modulus calculation.
+4. A decision rule for excluding questionable indents, such as pores, poor contact, surface defects, or abnormal curve shape.
+
+Supported file types:
 
 ```text
-IndentAnalyzer/
-├── README.md
-├── scripts/
-│   └── launch_application.sh
-├── src/
-│   ├── gui/
-│   │   └── main_interface.py
-│   ├── analysis/
-│   │   ├── main_analyzer.py
-│   │   ├── enhanced_analyzer.py
-│   │   ├── legacy_analyzer.py
-│   │   ├── mechanical_calculator.py
-│   │   └── curve_fitting.py
-│   ├── core/
-│   │   ├── standards.py
-│   │   ├── data_processor.py
-│   │   └── validators.py
-│   └── calibration/
-│       └── nist_methods.py
-└── docs/
-    └── screenshots/
+.xls
+.xlsx
 ```
 
-`src/gui/main_interface.py` is the main interface file. The command-line launcher is located at `scripts/launch_application.sh`.
+The files should contain full load–displacement curves, not only summary values.
 
 ---
 
-## 4. Add the Screenshots for GitHub Display
+## 3. Installation and Launch
 
-The screenshots should be placed in:
-
-```text
-docs/screenshots/
-```
-
-The README uses the exact filenames listed below:
-
-```text
-Screenshot 2026-05-01 at 10.03.35 AM.png
-Screenshot 2026-05-01 at 10.03.48 AM.png
-Screenshot 2026-05-01 at 10.03.56 AM.png
-Screenshot 2026-05-01 at 10.04.10 AM.png
-Screenshot 2026-05-01 at 10.04.19 AM.png
-Screenshot 2026-05-01 at 10.04.24 AM.png
-Screenshot 2026-05-01 at 10.04.31 AM.png
-Screenshot 2026-05-01 at 10.04.48 AM.png
-Screenshot 2026-05-01 at 10.04.55 AM.png
-Screenshot 2026-05-01 at 10.05.09 AM.png
-Screenshot 2026-05-01 at 10.05.19 AM.png
-Screenshot 2026-05-01 at 10.05.25 AM.png
-```
-
-If the screenshots are still inside `NewImages.zip`, extract them from the repository root:
-
-```bash
-mkdir -p docs/screenshots
-unzip NewImages.zip -d docs/screenshots
-rm -rf docs/screenshots/__MACOSX
-```
-
-Then commit the README and screenshots:
-
-```bash
-git add README.md docs/screenshots/*.png
-git commit -m "Add GUI workflow screenshots"
-```
-
----
-
-## 5. Installation
-
-Install the Python dependencies:
+Install the required Python packages:
 
 ```bash
 python3 -m pip install PyQt5 matplotlib pandas numpy scipy xlrd openpyxl
 ```
 
-Then launch the application from the repository root:
+Launch the software from the project folder:
 
 ```bash
 bash scripts/launch_application.sh
 ```
 
-The launcher opens the graphical interface:
+The program opens as:
 
 ```text
 Nanoindentation Analysis Suite
@@ -133,31 +64,31 @@ ISO 14577-4:2016 Compliant · Advanced Tip Calibration · Oliver-Pharr Method
 
 ---
 
-## 6. Getting Started: GUI Workflow
+## 4. Main Workflow
 
-The interface is organized into five main workflow tabs:
+The interface is organized into five steps:
 
-1. **Calibration**
-2. **Load File**
-3. **Settings**
-4. **Results**
-5. **Export**
+1. **Calibration** — load or generate the tip-area calibration.
+2. **Load File** — select the unknown sample file.
+3. **Settings** — choose fitting and material parameters.
+4. **Results** — run analysis and inspect values.
+5. **Export** — save final results.
 
-The right-side panel contains result and diagnostic tabs:
+The right-side panel shows:
 
-1. **Calibration**
-2. **Results Table**
-3. **Reliability**
-4. **Test Plot**
-5. **Log**
+1. **Calibration** — calibration summary.
+2. **Results Table** — calculated values for each indent.
+3. **Reliability** — statistics and distribution plots.
+4. **Test Plot** — individual load–displacement curves.
+5. **Log** — analysis record and recalculated averages.
 
 ---
 
-## 7. Step-by-Step Workflow with Screenshots
+## 5. Step-by-Step Use
 
 ### Step 1 — Open the Calibration Tab
 
-Start by selecting or generating the tip-area calibration. The calibration converts contact depth into projected contact area, which is required for both hardness and modulus calculations.
+Start by selecting or generating the tip-area calibration. This step converts contact depth into projected contact area, which is required for both hardness and modulus.
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.03.35%E2%80%AFAM.png" alt="Calibration tab in IndentAnalyzer" width="900">
 
@@ -167,7 +98,7 @@ The calibration tab provides three options:
 - generate calibration from fused silica,
 - manually enter tip-area coefficients.
 
-The projected contact area is represented as:
+The projected contact area is calculated using:
 
 $$
 A(h_c)=C_0h_c^2+C_1h_c+C_2h_c^{1/2}+C_3h_c^{1/4}+C_4h_c^{1/8}+\cdots
@@ -183,7 +114,7 @@ $$
 
 ### Step 2 — Select the Fused-Silica Calibration File
 
-For calibration from a reference material, select the fused-silica file. In the example workflow, the selected file is `Silica Before.xls`.
+For calibration from a reference material, select the fused-silica file. In the example shown, the selected file is `Silica Before.xls`.
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.03.48%E2%80%AFAM.png" alt="Selecting fused silica calibration file" width="900">
 
@@ -213,9 +144,9 @@ After calibration, inspect the calibration reliability plots and summary values.
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.03.56%E2%80%AFAM.png" alt="Calibration reliability summary" width="900">
 
-The reliability view summarizes fit quality, hardness distribution, reduced modulus distribution, and accepted calibration tests. This step confirms whether the calibration profile is suitable before analyzing unknown samples.
+This view summarizes fit quality, hardness distribution, reduced modulus distribution, and accepted calibration tests. The calibration should be checked before analyzing unknown samples because all final hardness and modulus values depend on the calibrated area function.
 
-The coefficient of determination is used to evaluate fit quality:
+Fit quality is evaluated using:
 
 $$
 R^2=1-\frac{\sum_i(P_i-\hat{P}_i)^2}{\sum_i(P_i-\bar{P})^2}
@@ -235,13 +166,7 @@ The example workflow uses:
 HEC12_2_03132025.xls
 ```
 
-The raw data are treated as load–displacement arrays:
-
-$$
-P_i=P(t_i),\qquad h_i=h(t_i)
-$$
-
-The software identifies:
+The software identifies the maximum load and corresponding displacement:
 
 $$
 P_{max}=\max(P_i)
@@ -259,7 +184,7 @@ After selecting the unknown sample file, the interface confirms that the experim
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.04.19%E2%80%AFAM.png" alt="Loaded sample file confirmation" width="900">
 
-The file is treated as a set of individual indentation tests. Each test is analyzed independently, and the final average is calculated only from included tests.
+The file is treated as a set of individual indentation tests. Each test is analyzed independently. Final averages are calculated only from included tests.
 
 ---
 
@@ -307,7 +232,7 @@ Open the **Results** tab and check that calibration, file selection, Poisson rat
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.04.31%E2%80%AFAM.png" alt="Run analysis tab" width="900">
 
-The software calculates contact depth:
+The contact depth is calculated as:
 
 $$
 h_c=h_{max}-\varepsilon\frac{P_{max}}{S}
@@ -319,7 +244,7 @@ $$
 \varepsilon\approx0.75
 $$
 
-The calculated $h_c$ is then passed into the tip-area function $A(h_c)$.
+The calculated $h_c$ is passed into the tip-area function $A(h_c)$.
 
 ---
 
@@ -408,13 +333,20 @@ $$
 
 ### Step 11 — Exclude a Questionable Test
 
-If a test passes the numerical $R^2$ threshold but appears physically questionable, it can be excluded from final statistics.
+If a test passes the numerical $R^2$ threshold but appears physically questionable, exclude it from final statistics.
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.05.19%E2%80%AFAM.png" alt="Exclude individual test from final statistics" width="900">
 
-A test may be excluded because of surface defects, pores, poor contact, abnormal loading behavior, large offset, or an indentation placed on a nonrepresentative microstructural region.
+Possible reasons for exclusion include:
 
-After exclusion, the final mean and standard deviation are recalculated using only the included tests:
+- surface defects,
+- pores,
+- poor contact,
+- abnormal loading behavior,
+- large offset,
+- indentation on a nonrepresentative microstructural region.
+
+After exclusion, final averages are recalculated using only the included tests:
 
 $$
 \bar{x}_{included}=\frac{1}{n_{included}}\sum_{i=1}^{n_{included}}x_i
@@ -436,39 +368,11 @@ Average Hardness: 22.78 ± 1.69 GPa
 Average Modulus: 291.16 ± 6.19 GPa
 ```
 
-The log should be preserved because it records the analysis sequence and supports reproducibility.
+The log is useful for reproducibility because it records the analysis sequence and inclusion/exclusion decisions.
 
 ---
 
-## 8. Data Requirements
-
-The current import workflow is written for Excel exports from the **Agilent Nano Indenter G200 system (MTS Nano Instruments, Oak Ridge, TN, USA)**.
-
-Supported file types:
-
-```text
-.xls
-.xlsx
-```
-
-The file should contain load and displacement data. Internally, the software normalizes recognized columns to names such as:
-
-```text
-Load (mN)
-Displacement (nm)
-Time (sec)
-```
-
-Before running analysis, confirm that:
-
-- load is reported in mN or correctly converted,
-- displacement is reported in nm or correctly converted,
-- unloading data are present,
-- the file contains full indentation curves, not only summary values.
-
----
-
-## 9. Core Equations
+## 6. Core Equations
 
 ### Tip-area function
 
@@ -512,17 +416,11 @@ $$
 E_s=\frac{1-\nu_s^2}{\frac{1}{E_r}-\frac{1-\nu_i^2}{E_i}}
 $$
 
-### Fit quality
-
-$$
-R^2=1-\frac{\sum_i(P_i-\hat{P}_i)^2}{\sum_i(P_i-\bar{P})^2}
-$$
-
 ---
 
-## 10. Export and Reporting
+## 7. What to Report
 
-For publication or dissertation reporting, include:
+For publication, dissertation, or supplementary-methods reporting, include:
 
 - instrument model: **Agilent Nano Indenter G200 system (MTS Nano Instruments, Oak Ridge, TN, USA)**,
 - indenter geometry and material,
@@ -544,41 +442,16 @@ For high-entropy carbides and other heterogeneous ceramics, also report relevant
 
 ---
 
-## 11. Troubleshooting
+## 8. Common Issues
 
-### Screenshots do not appear on GitHub
+### File does not load
 
-Confirm that the images are located in:
-
-```text
-docs/screenshots/
-```
-
-and committed:
-
-```bash
-git add docs/screenshots/*.png
-```
-
-If the filenames with special spaces do not render, rename them to simple names such as `step-01-calibration.png` and update the README paths.
-
-### GUI does not open
-
-Install dependencies and launch again:
-
-```bash
-python3 -m pip install PyQt5 matplotlib pandas numpy scipy xlrd openpyxl
-bash scripts/launch_application.sh
-```
-
-### Excel file does not load
-
-Check that the file is an Agilent G200 `.xls` or `.xlsx` export and that it contains load–displacement columns. If another instrument format is used, update the data-processing logic in:
-
-```text
-src/core/data_processor.py
-```
+Check that the file is an Agilent G200 `.xls` or `.xlsx` export and contains full load–displacement curves.
 
 ### Fit passes but the curve looks wrong
 
 Do not rely on $R^2$ alone. Inspect the curve in the **Test Plot** tab. Exclude tests affected by pores, surface roughness, poor contact, pile-up/sink-in artifacts, or abnormal loading behavior.
+
+### Final average changes after excluding a test
+
+This is expected. The software recalculates the mean, standard deviation, and coefficient of variation using only the included tests.
