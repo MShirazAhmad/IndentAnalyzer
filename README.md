@@ -169,15 +169,15 @@ The calibration tab provides three options:
 
 The projected contact area is represented as:
 
-\[
+$$
 A(h_c)=C_0h_c^2+C_1h_c+C_2h_c^{1/2}+C_3h_c^{1/4}+C_4h_c^{1/8}+\cdots
-\]
+$$
 
 For an ideal Berkovich tip:
 
-\[
+$$
 C_0=24.56
-\]
+$$
 
 ---
 
@@ -189,21 +189,21 @@ For calibration from a reference material, select the fused-silica file. In the 
 
 The fused-silica reference values used by the workflow are:
 
-\[
+$$
 E_s=72\,\text{GPa}
-\]
+$$
 
-\[
+$$
 \nu_s=0.17
-\]
+$$
 
 The reduced modulus relation is:
 
-\[
+$$
 \frac{1}{E_r}=\frac{1-\nu_s^2}{E_s}+\frac{1-\nu_i^2}{E_i}
-\]
+$$
 
-where \(E_i\) and \(\nu_i\) are the indenter elastic constants.
+where $E_i$ and $\nu_i$ are the indenter elastic constants.
 
 ---
 
@@ -217,9 +217,9 @@ The reliability view summarizes fit quality, hardness distribution, reduced modu
 
 The coefficient of determination is used to evaluate fit quality:
 
-\[
+$$
 R^2=1-\frac{\sum_i(P_i-\hat{P}_i)^2}{\sum_i(P_i-\bar{P})^2}
-\]
+$$
 
 ---
 
@@ -237,19 +237,19 @@ HEC12_2_03132025.xls
 
 The raw data are treated as load–displacement arrays:
 
-\[
+$$
 P_i=P(t_i),\qquad h_i=h(t_i)
-\]
+$$
 
 The software identifies:
 
-\[
+$$
 P_{max}=\max(P_i)
-\]
+$$
 
-\[
+$$
 h_{max}=h(P_{max})
-\]
+$$
 
 ---
 
@@ -283,21 +283,21 @@ Fitting method: oliver_pharr
 
 The unloading curve is fitted using the Oliver–Pharr power law:
 
-\[
+$$
 P=\alpha(h-h_f)^m
-\]
+$$
 
 The stiffness is calculated at maximum depth:
 
-\[
+$$
 S=\left.\frac{dP}{dh}\right|_{h=h_{max}}
-\]
+$$
 
 For the power-law fit:
 
-\[
+$$
 S=\alpha m(h_{max}-h_f)^{m-1}
-\]
+$$
 
 ---
 
@@ -309,17 +309,17 @@ Open the **Results** tab and check that calibration, file selection, Poisson rat
 
 The software calculates contact depth:
 
-\[
+$$
 h_c=h_{max}-\varepsilon\frac{P_{max}}{S}
-\]
+$$
 
 For a Berkovich indenter, the common Oliver–Pharr value is:
 
-\[
+$$
 \varepsilon\approx0.75
-\]
+$$
 
-The calculated \(h_c\) is then passed into the tip-area function \(A(h_c)\).
+The calculated $h_c$ is then passed into the tip-area function $A(h_c)$.
 
 ---
 
@@ -345,15 +345,15 @@ Unloading R²
 
 Hardness is calculated as:
 
-\[
+$$
 H=\frac{P_{max}}{A_c}
-\]
+$$
 
 Reduced modulus is calculated as:
 
-\[
+$$
 E_r=\frac{\sqrt{\pi}}{2}\frac{S}{\sqrt{A_c}}
-\]
+$$
 
 ---
 
@@ -374,19 +374,19 @@ Reduced modulus CV: 4.2%
 
 The mean and sample standard deviation are:
 
-\[
+$$
 \bar{x}=\frac{1}{n}\sum_{i=1}^{n}x_i
-\]
+$$
 
-\[
+$$
 s=\sqrt{\frac{1}{n-1}\sum_{i=1}^{n}(x_i-\bar{x})^2}
-\]
+$$
 
 The coefficient of variation is:
 
-\[
+$$
 CV(\%)=\frac{s}{\bar{x}}\times100
-\]
+$$
 
 ---
 
@@ -396,19 +396,19 @@ Use the test buttons to open individual indentation curves in the **Test Plot** 
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.05.09%E2%80%AFAM.png" alt="Individual indentation test plot" width="900">
 
-The plot shows the loading curve, unloading curve, fitted unloading curve, stiffness tangent, residual depth \(h_f\), contact depth \(h_c\), and maximum depth \(h_{max}\).
+The plot shows the loading curve, unloading curve, fitted unloading curve, stiffness tangent, residual depth $h_f$, contact depth $h_c$, and maximum depth $h_{max}$.
 
 The sample modulus is calculated from the reduced modulus relation:
 
-\[
+$$
 E_s=\frac{1-\nu_s^2}{\frac{1}{E_r}-\frac{1-\nu_i^2}{E_i}}
-\]
+$$
 
 ---
 
 ### Step 11 — Exclude a Questionable Test
 
-If a test passes the numerical \(R^2\) threshold but appears physically questionable, it can be excluded from final statistics.
+If a test passes the numerical $R^2$ threshold but appears physically questionable, it can be excluded from final statistics.
 
 <img src="docs/screenshots/Screenshot%202026-05-01%20at%2010.05.19%E2%80%AFAM.png" alt="Exclude individual test from final statistics" width="900">
 
@@ -416,9 +416,9 @@ A test may be excluded because of surface defects, pores, poor contact, abnormal
 
 After exclusion, the final mean and standard deviation are recalculated using only the included tests:
 
-\[
+$$
 \bar{x}_{included}=\frac{1}{n_{included}}\sum_{i=1}^{n_{included}}x_i
-\]
+$$
 
 ---
 
@@ -472,51 +472,51 @@ Before running analysis, confirm that:
 
 ### Tip-area function
 
-\[
+$$
 A_c=A(h_c)=C_0h_c^2+C_1h_c+C_2h_c^{1/2}+C_3h_c^{1/4}+\cdots
-\]
+$$
 
 ### Oliver–Pharr unloading fit
 
-\[
+$$
 P=\alpha(h-h_f)^m
-\]
+$$
 
 ### Contact stiffness
 
-\[
+$$
 S=\left.\frac{dP}{dh}\right|_{h=h_{max}}
-\]
+$$
 
 ### Contact depth
 
-\[
+$$
 h_c=h_{max}-\varepsilon\frac{P_{max}}{S}
-\]
+$$
 
 ### Hardness
 
-\[
+$$
 H=\frac{P_{max}}{A_c}
-\]
+$$
 
 ### Reduced modulus
 
-\[
+$$
 E_r=\frac{\sqrt{\pi}}{2}\frac{S}{\sqrt{A_c}}
-\]
+$$
 
 ### Sample modulus
 
-\[
+$$
 E_s=\frac{1-\nu_s^2}{\frac{1}{E_r}-\frac{1-\nu_i^2}{E_i}}
-\]
+$$
 
 ### Fit quality
 
-\[
+$$
 R^2=1-\frac{\sum_i(P_i-\hat{P}_i)^2}{\sum_i(P_i-\bar{P})^2}
-\]
+$$
 
 ---
 
@@ -532,7 +532,7 @@ For publication or dissertation reporting, include:
 - maximum load or depth protocol,
 - unloading fit method,
 - percentage of curve used for fitting,
-- minimum accepted \(R^2\),
+- minimum accepted $R^2$,
 - number of total tests,
 - number of included and excluded tests,
 - exclusion rationale,
@@ -581,4 +581,4 @@ src/core/data_processor.py
 
 ### Fit passes but the curve looks wrong
 
-Do not rely on \(R^2\) alone. Inspect the curve in the **Test Plot** tab. Exclude tests affected by pores, surface roughness, poor contact, pile-up/sink-in artifacts, or abnormal loading behavior.
+Do not rely on $R^2$ alone. Inspect the curve in the **Test Plot** tab. Exclude tests affected by pores, surface roughness, poor contact, pile-up/sink-in artifacts, or abnormal loading behavior.
