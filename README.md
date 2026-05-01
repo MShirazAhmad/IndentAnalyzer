@@ -87,9 +87,11 @@ IndentAnalyzer/
 │   │   ├── data_processor.py
 │   │   └── validators.py
 │   └── calibration/
-│       ├── nist_methods.py
-│       └── tip_calibrator.py
+│       └── nist_methods.py
 └── dump/  # archived/legacy utilities, docs, tests, data
+    └── unused_src/
+        └── calibration/
+            └── tip_calibrator.py
 ```
 
 > `dump/` contains historical scripts and artifacts; the active GUI workflow is rooted in `scripts/` + `src/`.
@@ -222,16 +224,10 @@ print(results["overall_success"])
 
 **Use it when:** establishing metrological traceability before analyzing unknown samples.
 
-## 6.12 `src/calibration/tip_calibrator.py`
+## 6.12 `dump/unused_src/calibration/tip_calibrator.py`
 
 **Purpose:** end-to-end calibration helper with plotting and interpretive output.  
-**Typical use:** calibration studies with fused silica references and visual reporting.
-
-Module-style execution example:
-
-```bash
-python3 -m src.calibration.tip_calibrator
-```
+**Typical use:** archived calibration studies with fused silica references and visual reporting.
 
 ---
 
@@ -275,4 +271,3 @@ For publication-quality reporting, always include:
 
 `dump/` contains historical scripts, tests, and documents from prior cleanup/restructuring cycles.  
 Treat it as archive/reference unless you are explicitly reproducing legacy behavior.
-
