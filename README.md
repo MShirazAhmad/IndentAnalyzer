@@ -2,7 +2,6 @@
 
 **IndentAnalyzer** is a graphical nanoindentation analysis tool written for Excel data exported from an **Agilent Nano Indenter G200 system (MTS Nano Instruments, Oak Ridge, TN, USA)**. It guides the user through tip-area calibration, sample-file loading, Oliver–Pharr analysis, result review, individual test inspection, test exclusion, and final reporting.
 
-
 ---
 
 ## 1. What This Tool Does
@@ -41,26 +40,62 @@ The files should contain full load–displacement curves, not only summary value
 
 ---
 
-## 3. Installation and Launch
+## 3. Setup and Launch
 
-Install the required Python packages:
+### Step 1 — Clone the Repository
+
+Open a terminal and clone the project:
 
 ```bash
-python3 -m pip install PyQt5 matplotlib pandas numpy scipy xlrd openpyxl
+git clone https://github.com/MShirazAhmad/IndentAnalyzer.git
+cd IndentAnalyzer
 ```
 
-Launch the software from the project folder:
+### Step 2 — Create a Python Environment
+
+Create a local environment for the project:
+
+```bash
+python3 -m venv .venv
+```
+
+Activate it on macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
+Activate it on Windows:
+
+```bash
+.venv\Scripts\activate
+```
+
+### Step 3 — Install Required Packages
+
+Install the packages needed to run the software:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install PyQt5 matplotlib pandas numpy scipy xlrd openpyxl
+```
+
+### Step 4 — Launch the App
+
+Run the launcher from the project folder:
 
 ```bash
 bash scripts/launch_application.sh
 ```
 
-The program opens as:
+The app opens as:
 
 ```text
 Nanoindentation Analysis Suite
 ISO 14577-4:2016 Compliant · Advanced Tip Calibration · Oliver-Pharr Method
 ```
+
+After the app opens, start with the **Calibration** tab and follow the workflow shown below.
 
 ---
 
