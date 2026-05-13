@@ -1,0 +1,116 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.pytest_cache/
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# IDE / editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Mypy / cache
+.mypy_cache/
+.cache/
+
+# History (local dev history folder)
+.history/
+
+# Logs and runtime files
+*.log
+IndentXLSAnalyzer_logs/
+
+# Temporary files
+tmp/
+*.tmp
+*.temp
+
+# Build artifacts
+*.o
+*.obj
+*.so
+*.dylib
+
+# Python bytecode
+*.pyc
+
+# Other
+*.html
+
+# IDE / Editor specific
+# JetBrains IDEs (PyCharm, IntelliJ)
+.idea/
+# Visual Studio Code
+.vscode/
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+# Emacs backups and lock files
+*~
+.#*
+.emacs.desktop.lock
+# Vim swap files
+*.swp
+*.swo
+*.swn
+# Eclipse
+.project
+.classpath
+.settings/
+.metadata/
+# NetBeans
+nbproject/private/
+# Spyder
+.spyproject/
+# PyCharm / IntelliJ module files
+*.iml
+
+# Samples, large datasets (untracked by default - uncomment if desired)
+# samples/
+
+# Ignore hidden directories (folders starting with a dot) anywhere in the repo,
+# but keep the Git metadata directory so repo functions remain intact.
+**/.[!.]*//
+**/..?*//
+!/.git/
