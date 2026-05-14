@@ -1,55 +1,49 @@
-# Read the Docs Setup
+# Publishing
 
-This repository is ready to build on Read the Docs using MkDocs Material.
+This page is for maintainers who publish the documentation site. Regular users can start with Installation, Features, Code Workflow, Calculations, and the API Reference.
 
-## Files Used by Read the Docs
+## Read the Docs Build
 
-- `.readthedocs.yaml` selects the Read the Docs build image, Python version, MkDocs builder, and documentation dependency file.
-- `mkdocs.yml` defines the site metadata, navigation, theme, Markdown extensions, and API reference generation.
-- `docs/requirements.txt` lists the Python packages needed only for the documentation build.
-- `docs/gen_ref_pages.py` generates API reference pages from Python modules under `src/`.
-- `docs/*.md` contains the hand-written documentation pages.
+The documentation is built with MkDocs Material and published by Read the Docs from the GitHub repository:
 
-## Import the Project
+```text
+https://github.com/MShirazAhmad/IndentAnalyzer
+```
 
-1. Go to Read the Docs.
-2. Choose **Import a Project**.
-3. Connect or select the GitHub repository:
+The current development documentation branch is:
 
-   ```text
-   https://github.com/MShirazAhmad/IndentAnalyzer
-   ```
+```text
+indevelopment
+```
 
-4. Select the branch you want Read the Docs to build. For current development documentation, use:
+When that branch is connected in Read the Docs, pushing a documentation commit can trigger a new hosted build.
 
-   ```text
-   indevelopment
-   ```
+## Local Check Before Publishing
 
-5. Keep the default configuration-file path:
-
-   ```text
-   .readthedocs.yaml
-   ```
-
-6. Trigger a build.
-
-## Expected Build Command
-
-Read the Docs will install `docs/requirements.txt` and run MkDocs using `mkdocs.yml`. Locally, the equivalent command is:
+Before pushing documentation changes, run:
 
 ```bash
 python -m pip install -r docs/requirements.txt
 mkdocs build --clean --strict
 ```
 
-## API Reference
+The generated HTML is written to:
 
-The API reference is generated automatically during the MkDocs build. You do not need to commit generated files under `docs/reference/`; they are created at build time by `docs/gen_ref_pages.py`.
+```text
+site/
+```
 
-## Notes
+The `site/` directory is a build output and does not need to be committed.
 
-- The documentation build does not need to run the PyQt GUI.
-- Sample data files remain in the repository for user workflows, but generated local outputs such as offset CSV files are ignored.
-- If new Python modules are added under `src/`, they are automatically included in the generated API reference.
+## Source Code Reference
 
+The API Reference is generated during the MkDocs build from the Python files under `src/`. This keeps the published documentation synchronized with the actual code on the branch being built.
+
+When a new Python module is added under `src/`, it is automatically included in the generated API Reference during the next documentation build.
+
+## Maintainer Notes
+
+- The documentation build does not need to launch the PyQt GUI.
+- Hand-written pages live under `docs/`.
+- The generated API Reference is created at build time, so generated `docs/reference/` files should not be committed.
+- Math equations are rendered by MathJax through the MkDocs configuration.

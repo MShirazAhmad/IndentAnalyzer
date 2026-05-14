@@ -1,24 +1,34 @@
 # IndentAnalyzer Documentation
 
-IndentAnalyzer provides ISO 14577-aligned nanoindentation analysis for Agilent G200 exports, including calibration, curve fitting, and mechanical property calculation.
+IndentAnalyzer is a Python application for nanoindentation analysis of Agilent Nano Indenter G200 Excel exports. It combines a PyQt GUI, a normalized file-loader interface, preprocessing and validation tools, Oliver-Pharr unloading fits, NIST-style calibration helpers, and ISO 14577-aligned hardness and modulus calculations.
 
-This documentation site is structured for Read the Docs publishing from the same Git repository:
+The documentation is built for Read the Docs with MkDocs Material. It contains both extended user-facing explanations and an auto-generated API reference for every Python module under `src/`.
 
-1. **Home**: project overview and workflow context.
-2. **Installation**: local setup and GUI launch commands.
-3. **Calculations**: equations and standards used in the analysis.
-4. **Read the Docs Setup**: how this repository is connected to Read the Docs.
-5. **API Reference**: auto-generated pages for modules in `src/`, so source code and class/function docs are browsable online.
-6. **License**: CC BY-ND 4.0 repository license.
+## What the Software Does
 
-## Scope
+IndentAnalyzer turns raw load-displacement spreadsheets into per-indent and summary mechanical properties:
 
-- Calibration methods (load-frame compliance and tip-area function)
-- Oliver-Pharr style unloading analysis
-- Mechanical properties (hardness, reduced modulus, sample modulus)
-- GUI and batch-processing interfaces
+- reads Agilent G200 `.xls` and `.xlsx` exports,
+- normalizes each `Test ###` sheet to time, load, and displacement columns,
+- separates loading and unloading portions of each indentation curve,
+- removes or reports horizontal/plateau-like curve segments,
+- fits unloading curves with Oliver-Pharr or normalized power-law models,
+- calculates stiffness, contact depth, projected contact area, hardness, reduced modulus, and sample modulus,
+- calibrates tip-area coefficients from fused-silica reference data,
+- processes CSM depth profiles and averages hardness/modulus versus depth,
+- exposes results through the GUI, batch workflows, and Python classes.
 
-## Source links
+## Documentation Map
+
+- **Installation** explains the local environment, GUI launch command, and documentation build command.
+- **Features** gives the full feature set from a user and developer point of view.
+- **Code Workflow** follows data through the working code from file load to final result.
+- **Calculations** documents the mathematical equations, unit conversions, thresholds, and quality calculations used in the implementation.
+- **Module Guide** explains each `src/**/*.py` file and points to the generated source reference.
+- **API Reference** is generated during the MkDocs build from the source tree, with source code visible on each module page.
+- **Read the Docs Setup** explains how publishing works from GitHub to Read the Docs.
+
+## Repository Links
 
 - Repository: <https://github.com/MShirazAhmad/IndentAnalyzer>
 - README usage guide: <https://github.com/MShirazAhmad/IndentAnalyzer/blob/main/README.md>

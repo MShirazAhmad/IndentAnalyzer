@@ -18,8 +18,11 @@ theme:
 nav:
   - Home: index.md
   - Installation: installation.md
+  - Features: features.md
+  - Code Workflow: code-workflow.md
   - Calculations: calculations.md
-  - Read the Docs Setup: readthedocs.md
+  - Module Guide: modules.md
+  - Publishing: readthedocs.md
   - API Reference: reference/index.md
   - License: license.md
 
