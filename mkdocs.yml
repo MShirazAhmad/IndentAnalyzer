@@ -1,15 +1,27 @@
 site_name: IndentAnalyzer
 site_description: Nanoindentation analysis documentation and code reference
+site_author: M Shiraz Ahmad
+site_url: https://indentanalyzer.readthedocs.io/
 repo_url: https://github.com/MShirazAhmad/IndentAnalyzer
 repo_name: MShirazAhmad/IndentAnalyzer
+edit_uri: edit/indevelopment/docs/
+copyright: Copyright &copy; 2026 M Shiraz Ahmad. Licensed under CC BY-ND 4.0.
 
 theme:
   name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
 
 nav:
   - Home: index.md
+  - Installation: installation.md
   - Calculations: calculations.md
-  - API Reference: reference/
+  - Read the Docs Setup: readthedocs.md
+  - API Reference: reference/index.md
+  - License: license.md
 
 plugins:
   - search
@@ -41,3 +53,6 @@ markdown_extensions:
 
 extra_javascript:
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+validation:
+  omitted_files: ignore
