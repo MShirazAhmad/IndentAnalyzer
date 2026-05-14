@@ -136,7 +136,7 @@ debug_logger = setup_debug_logging()
 
 
 def resolve_app_icon_path() -> Optional[Path]:
-    """Return the first available app icon path."""
+    """Return the first available icon path from repo root, assets, then gui dir."""
     project_root = Path(__file__).resolve().parents[2]
     icon_candidates = (
         project_root / "icon.png",
@@ -940,6 +940,7 @@ class NanoindentationGUI(QMainWindow):
         self.center_window()
 
     def _apply_app_icon(self):
+        """Apply icon to both this window and QApplication if an icon file exists."""
         icon_path = resolve_app_icon_path()
         if not icon_path:
             return
