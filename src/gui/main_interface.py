@@ -135,6 +135,20 @@ def setup_debug_logging():
 debug_logger = setup_debug_logging()
 
 
+def resolve_app_icon_path() -> Optional[Path]:
+    """Return the first available app icon path."""
+    project_root = Path(__file__).resolve().parents[2]
+    icon_candidates = (
+        project_root / "icon.png",
+        project_root / "assets" / "icon.png",
+        Path(__file__).resolve().parent / "icon.png",
+    )
+    for icon_path in icon_candidates:
+        if icon_path.is_file():
+            return icon_path
+    return None
+
+
 class AnalysisWorker(QThread):
     """
     Worker thread for running nanoindentation analysis
@@ -814,6 +828,7 @@ class NanoindentationGUI(QMainWindow):
     
     def __init__(self):
         super().__init__()
+        self._apply_app_icon()
         
         # Initialize attributes
         self.analyzer: Optional[FixedIndentXLSAnalyzer] = None
@@ -923,6 +938,18 @@ class NanoindentationGUI(QMainWindow):
         
         # Center the window
         self.center_window()
+
+    def _apply_app_icon(self):
+        icon_path = resolve_app_icon_path()
+        if not icon_path:
+            return
+        icon = QIcon(str(icon_path))
+        if icon.isNull():
+            return
+        self.setWindowIcon(icon)
+        app = QApplication.instance()
+        if app:
+            app.setWindowIcon(icon)
 
     def configure_responsive_metrics(self):
         """Calculate UI dimensions from the current screen instead of fixed pixels."""

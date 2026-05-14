@@ -1,5 +1,7 @@
 # IndentAnalyzer
 
+![IndentAnalyzer documentation icon](https://github.com/user-attachments/assets/636c922f-8742-4f5e-82f5-0a4a1da1ee37)
+
 **IndentAnalyzer** is a graphical nanoindentation analysis tool for Excel data exported from an **Agilent Nano Indenter G200 system (MTS Nano Instruments, Oak Ridge, TN, USA)**.
 
 It guides users through:
