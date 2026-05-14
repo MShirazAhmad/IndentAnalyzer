@@ -1,21 +1,16 @@
 # Installation
 
-This page gives the minimal setup needed to run IndentAnalyzer locally from the same Git repository used by Read the Docs.
+This page gives the minimum setup to run IndentAnalyzer locally and verify the documentation build.
 
-## Clone
+## 1) Clone and switch to development branch
 
 ```bash
 git clone https://github.com/MShirazAhmad/IndentAnalyzer.git
 cd IndentAnalyzer
-```
-
-For the current development branch:
-
-```bash
 git checkout indevelopment
 ```
 
-## Create Environment
+## 2) Create a virtual environment
 
 ```bash
 python3 -m venv .venv
@@ -24,26 +19,40 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## Launch the GUI
+## 3) Launch the GUI
 
 ```bash
 bash scripts/launch_application.sh
 ```
 
-The application opens the Nanoindentation Analysis Suite GUI. Start with calibration, then load the experiment file, review/exclude tests, configure settings, run analysis, and export results.
+The standard user flow is:
 
-## Build Documentation Locally
+1. `1. Calibration`
+2. `2. Load File`
+3. `3. Settings`
+4. `4. Results`
+5. `5. Export`
 
-Read the Docs installs documentation dependencies from `docs/requirements.txt`. To test the same build locally:
+Then review details in right-panel tabs such as `Results Table`, `Reliability`, and `Curve Viewer`.
+
+See [GUI Walkthrough](gui-walkthrough.md) for the full scientific workflow.
+
+## 4) Build documentation locally (strict)
 
 ```bash
 python -m pip install -r docs/requirements.txt
 mkdocs build --clean --strict
 ```
 
-For live preview:
+Optional live preview:
 
 ```bash
 mkdocs serve
 ```
+
+## Common setup issues
+
+- **GUI fails to launch**: confirm `PyQt5` is installed from `requirements.txt` and run from an active virtual environment.
+- **File not loading**: confirm the file is an Agilent G200 `.xls`/`.xlsx` export with test sheets.
+- **Docs build failure**: run the strict build command above and resolve missing links/assets before publishing.
 

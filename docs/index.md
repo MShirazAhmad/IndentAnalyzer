@@ -1,37 +1,48 @@
 # IndentAnalyzer Documentation
 
-IndentAnalyzer is a Python application for nanoindentation analysis of Agilent Nano Indenter G200 Excel exports. It combines a PyQt GUI, a normalized file-loader interface, preprocessing and validation tools, Oliver-Pharr unloading fits, NIST-style calibration helpers, and ISO 14577-aligned hardness and modulus calculations.
+IndentAnalyzer is a nanoindentation analysis toolkit for **Agilent Nano Indenter G200** Excel exports. This documentation is written for material scientists who need to move from raw load-displacement curves to defensible hardness/modulus results.
 
-The documentation is built for Read the Docs with MkDocs Material. It contains both extended user-facing explanations and an auto-generated code reference for every Python module under `src/`.
+## Start Here (Recommended Reading Order)
 
-## What the Software Does
+1. [Installation](installation.md) — set up environment and launch GUI.
+2. [GUI Walkthrough](gui-walkthrough.md) — run the standard 5-step workflow with screenshots.
+3. [Mathematical Calculations](calculations.md) — verify equations, units, and assumptions.
+4. [Analysis Configuration](analysis-configuration.md) — tune thresholds and defaults.
+5. [Features](features.md) — full capability map including CSM and expert review.
 
-IndentAnalyzer turns raw load-displacement spreadsheets into per-indent and summary mechanical properties:
+## What Input Data Is Expected
 
-- reads Agilent G200 `.xls` and `.xlsx` exports,
-- normalizes each `Test ###` sheet to time, load, and displacement columns,
-- separates loading and unloading portions of each indentation curve,
-- removes or reports horizontal/plateau-like curve segments,
-- fits unloading curves with Oliver-Pharr or normalized power-law models,
-- calculates stiffness, contact depth, projected contact area, hardness, reduced modulus, and sample modulus,
-- calibrates tip-area coefficients from fused-silica reference data,
-- processes CSM depth profiles and averages hardness/modulus versus depth,
-- exposes results through the GUI, batch workflows, and Python classes.
+- Agilent G200 `.xls` or `.xlsx` files.
+- Test sheets named like `Test 001`, `Test 002`, etc.
+- Curves with load and displacement series that can be split into loading/unloading segments.
+
+For loader details and extension strategy, see [File Loaders](file-loaders.md).
+
+## What You Get as Output
+
+- Per-test fit quality and quality flags.
+- Contact stiffness, contact depth, contact area.
+- Hardness (
+\(H\)) and reduced modulus (\(E_r\)).
+- Sample elastic modulus (\(E_s\)) from the indenter/sample compliance relation.
+- Summary statistics with optional exclusion of questionable tests.
+
+## Scientific Caution
+
+Good-looking summary numbers can still hide poor individual fits. Always pair numerical filters (for example minimum \(R^2\)) with visual inspection in **Curve Viewer** and clear exclusion rationale.
 
 ## Documentation Map
 
-- **Installation** explains the local environment, GUI launch command, and documentation build command.
-- **Features** gives the full feature set from a user and developer point of view.
-- **File Loaders** explains why loaders exist, how Agilent G200 files are normalized, and how to add support for another file format.
-- **Analysis Configuration** explains editable thresholds, material defaults, validation limits, and where to change them.
-- **Code Workflow** follows data through the working code from file load to final result.
-- **Calculations** documents the mathematical equations, unit conversions, thresholds, and quality calculations used in the implementation.
-- **Module Guide** explains each `src/**/*.py` file and points to the generated source reference.
-- **Function Reference** documents the important classes and functions in a Django-style reference format.
-- **Code Reference** is generated during the MkDocs build from the source tree, with source code visible on each module page.
-- **Read the Docs Setup** explains how publishing works from GitHub to Read the Docs.
+- [Installation](installation.md)
+- [GUI Walkthrough](gui-walkthrough.md)
+- [Features](features.md)
+- [File Loaders](file-loaders.md)
+- [Analysis Configuration](analysis-configuration.md)
+- [Code Workflow](code-workflow.md)
+- [Mathematical Calculations](calculations.md)
+- [Module Guide](modules.md)
+- [Function Reference](function-reference.md)
+- [Publishing](readthedocs.md)
+- [Code Reference](reference/index.md)
+- [License](license.md)
 
-## Repository Links
-
-- Repository: <https://github.com/MShirazAhmad/IndentAnalyzer>
-- README usage guide: <https://github.com/MShirazAhmad/IndentAnalyzer/blob/main/README.md>
