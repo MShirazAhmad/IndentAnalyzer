@@ -870,6 +870,7 @@ class NanoindentationGUI(QMainWindow):
         self.current_analysis_file_path: Optional[str] = None
         self.pending_analysis_context: Optional[str] = None
         self.calibration_plot_widget: Optional[MatplotlibWidget] = None
+        self.calibration_metrics_text: Optional[QTextEdit] = None
         self.csm_file_path: Optional[str] = None
         self.csm_offsets: Dict[int, float] = {}
         self.file_load_offsets: Dict[int, float] = {}
@@ -1442,8 +1443,9 @@ class NanoindentationGUI(QMainWindow):
             fontsize=11, fontweight='bold', y=0.98
         )
 
-        # ── TAB 1: Area Function & Deviation (Full width) ──────────────────
-        ax1a = fig.add_subplot(2, 2, 1)
+        # ── Area Function ─────────────────────────────────────────────────
+        gs = fig.add_gridspec(2, 2, height_ratios=[1.0, 0.9])
+        ax1a = fig.add_subplot(gs[0, 0])
         ax1a.plot(hc, A_ideal / 1e6, 'k--', linewidth=1.5, alpha=0.55,
                   label='Ideal Berkovich')
         ax1a.plot(hc, A_loaded / 1e6, color='#00a8cc', linewidth=2.2,
@@ -1454,8 +1456,8 @@ class NanoindentationGUI(QMainWindow):
         ax1a.legend(fontsize=8, loc='upper left')
         ax1a.grid(True, alpha=0.3)
 
-        # ── TAB 2: Deviation Analysis ──────────────────────────────────────
-        ax1b = fig.add_subplot(2, 2, 2)
+        # ── Deviation Analysis ────────────────────────────────────────────
+        ax1b = fig.add_subplot(gs[0, 1])
         pos_mask = deviation_pct >= 0
         ax1b.fill_between(hc, deviation_pct, 0, where=pos_mask, alpha=0.3, 
                           color='#e74c3c', label='Above ideal')
@@ -1472,8 +1474,8 @@ class NanoindentationGUI(QMainWindow):
         ax1b.legend(fontsize=8, loc='best')
         ax1b.grid(True, alpha=0.3)
 
-        # ── TAB 3: Coefficients ────────────────────────────────────────────
-        ax2a = fig.add_subplot(2, 2, 3)
+        # ── Coefficients ──────────────────────────────────────────────────
+        ax2a = fig.add_subplot(gs[1, :])
         coeff_names = [f'C{i}' for i in range(9)]
         colors_bar = ['#00a8cc' if v >= 0 else '#e74c3c' for v in C]
         bars = ax2a.bar(coeff_names, C, color=colors_bar, edgecolor='white', linewidth=0.8)
@@ -1487,10 +1489,6 @@ class NanoindentationGUI(QMainWindow):
                 ax2a.text(idx, val, f'{val:.2g}', ha='center', 
                          va='bottom' if val >= 0 else 'top', fontsize=7, color='white')
 
-        # ── TAB 4: Quality Assessment ──────────────────────────────────────
-        ax2b = fig.add_subplot(2, 2, 4)
-        ax2b.axis('off')
-        
         n_active = sum(1 for c in C[1:] if abs(c) > 1e-10)
         c0_dev_pct = abs(C[0] - 24.5) / 24.5 * 100
         
@@ -1521,11 +1519,8 @@ Depth Range Deviation:
 OVERALL VERDICT
 {verdict}
 """
-        
-        ax2b.text(0.1, 0.95, quality_text, transform=ax2b.transAxes,
-                 fontfamily='monospace', fontsize=9, verticalalignment='top',
-                 bbox=dict(boxstyle='round,pad=1', facecolor=verdict_color, alpha=0.3,
-                          edgecolor=verdict_color, linewidth=2))
+
+        self._set_calibration_metrics_text(quality_text, verdict_color)
 
         fig.tight_layout(rect=[0, 0, 1, 0.97])
         self.calibration_plot_widget.canvas.draw()
@@ -1589,7 +1584,7 @@ OVERALL VERDICT
         has_loading_results = bool(self.current_results)
 
         if workflow_title.startswith("1. Calibration"):
-            visible_titles = {"Calibration"}
+            visible_titles = {"Calibration", "Calibration Metrics"}
         elif workflow_title in ("2. Load File", "3. Settings"):
             visible_titles = {"Reliability", "Curve Viewer"} if has_loading_results else set()
         elif workflow_title == "Expert Mode":
@@ -1597,10 +1592,15 @@ OVERALL VERDICT
         elif workflow_title == "Log":
             visible_titles = set()
         else:
-            visible_titles = {"CSM Depth Profiles", "CSM Averaged Data"} if mode == "CSM" else {"Curve Viewer"}
+            visible_titles = (
+                {"CSM Depth Profiles", "CSM Averaged Data"}
+                if mode == "CSM"
+                else {"Reliability", "Curve Viewer", "Results Table"}
+            )
 
         all_titles = [
             "Calibration",
+            "Calibration Metrics",
             "Results Table",
             "Reliability",
             "Curve Viewer",
@@ -1618,13 +1618,23 @@ OVERALL VERDICT
                 self.results_panel_tabs.setCurrentIndex(idx)
             return
 
-        for preferred in ("Calibration", "Expert Plot", "Curve Viewer", "Reliability", "CSM Depth Profiles", "CSM Averaged Data"):
+        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Reliability", "Curve Viewer", "CSM Averaged Data", "Results Table"):
             if preferred not in visible_titles:
                 continue
             idx = self._results_tab_index(preferred)
             if idx >= 0:
                 self.results_panel_tabs.setCurrentIndex(idx)
                 break
+        self._refresh_results_view_buttons()
+
+    def _show_workflow_results(self, preferred_results_tab: str):
+        """Move the workflow to Results and focus a populated right-side results tab."""
+        self.unlock_workflow_step(3, move_to_step=True)
+        self._configure_results_panel_visibility()
+        if self.results_panel_tabs:
+            idx = self._results_tab_index(preferred_results_tab)
+            if idx >= 0:
+                self.results_panel_tabs.setCurrentIndex(idx)
         self._refresh_results_view_buttons()
 
     def _on_workflow_step_changed(self, _index: int):
@@ -2615,6 +2625,18 @@ OVERALL VERDICT
         tab_widget.addTab(self.calibration_plot_widget, "Calibration")
         self._draw_calibration_placeholder()
 
+        self.calibration_metrics_text = QTextEdit()
+        self.calibration_metrics_text.setReadOnly(True)
+        metrics_font = QFont()
+        metrics_font.setFamily("Menlo")
+        metrics_font.setPointSize(11)
+        self.calibration_metrics_text.setFont(metrics_font)
+        self.calibration_metrics_text.setPlainText(
+            "Calibration quality metrics will appear after you load, generate, or apply a calibration."
+        )
+        self._set_calibration_metrics_text_style("#00a8cc")
+        tab_widget.addTab(self.calibration_metrics_text, "Calibration Metrics")
+
         # ── Tab 1: Results table ──────────────────────────────────────────
         self.results_table = ResultsTableWidget()
         tab_widget.addTab(self.results_table, "Results Table")
@@ -2734,8 +2756,9 @@ OVERALL VERDICT
             "Expert Plot": "Custom X/Y plotting from the selected file and included tests.",
             "Log": "Timestamped session audit trail.",
             "Calibration": "Tip area function and calibration reliability view.",
+            "Calibration Metrics": "Numeric calibration quality assessment and overall verdict.",
         }
-        for title in ("Calibration", "Reliability", "Curve Viewer", "Results Table", "CSM Depth Profiles", "CSM Averaged Data", "Expert Plot", "Log"):
+        for title in ("Calibration", "Calibration Metrics", "Reliability", "Curve Viewer", "Results Table", "CSM Depth Profiles", "CSM Averaged Data", "Expert Plot", "Log"):
             btn = QPushButton(title)
             btn.setCheckable(True)
             btn.setProperty("viewSwitch", True)
@@ -2791,6 +2814,7 @@ OVERALL VERDICT
             "Expert Plot": "Expert Plot lets you choose custom X/Y variables and optional LSQ fitting.",
             "Log": "Log records file choices, settings, exclusions, final values, and exports.",
             "Calibration": "Calibration shows the active tip area function and calibration reliability.",
+            "Calibration Metrics": "Calibration Metrics shows the numeric quality assessment separately from the plots.",
         }
         if self.results_view_help_label is not None:
             self.results_view_help_label.setText(help_text.get(current_title, ""))
@@ -2803,6 +2827,27 @@ OVERALL VERDICT
             visible = tab_bar.isTabVisible(idx) if hasattr(tab_bar, "isTabVisible") else self.results_panel_tabs.isTabEnabled(idx)
             button.setVisible(visible)
             button.setChecked(visible and title == current_title)
+
+    def _set_calibration_metrics_text_style(self, accent_color: str):
+        if not self.calibration_metrics_text:
+            return
+        self.calibration_metrics_text.setStyleSheet(f"""
+            QTextEdit {{
+                background:#f8fbfc;
+                color:#24313a;
+                border:1px solid #d6dbe0;
+                border-left:5px solid {accent_color};
+                border-radius:{self.sp(6)}px;
+                padding:{self.sp(14)}px;
+                selection-background-color:#c8e8ef;
+            }}
+        """)
+
+    def _set_calibration_metrics_text(self, text: str, accent_color: str = "#00a8cc"):
+        if not self.calibration_metrics_text:
+            return
+        self.calibration_metrics_text.setPlainText(text.strip())
+        self._set_calibration_metrics_text_style(accent_color)
 
     def _draw_calibration_placeholder(self):
         """Show an instructional placeholder in the calibration plot tab."""
@@ -3519,15 +3564,26 @@ OVERALL VERDICT
         try:
             self.last_run_context = "csm"
             test_numbers = self._csm_test_numbers()
-            target_x_range = (
+            depth_range = (
+                float(self.csm_depth_min_spin.value()),
+                float(self.csm_depth_max_spin.value()),
+            )
+            if depth_range[1] < depth_range[0]:
+                QMessageBox.warning(
+                    self,
+                    "Invalid CSM Depth Window",
+                    "Set Plot/result depth max greater than or equal to Plot/result depth min."
+                )
+                return
+            error_bar_range = (
                 float(self.csm_target_x_start_spin.value()),
                 float(self.csm_target_x_end_spin.value()),
                 float(self.csm_target_x_step_spin.value()),
             )
-            if target_x_range[2] <= 0 or target_x_range[1] < target_x_range[0]:
+            if error_bar_range[2] <= 0 or error_bar_range[1] < error_bar_range[0]:
                 QMessageBox.warning(
                     self,
-                    "Invalid CSM Averaging Range",
+                    "Invalid CSM Error-Bar Range",
                     "Set Error-bar placement (start, end, step) with end >= start and step > 0."
                 )
                 return
@@ -3565,9 +3621,11 @@ OVERALL VERDICT
             self.append_research_log(f"Experiment file: {file_path}", "CSM")
             self.append_research_log(f"Tip area calibration source: {self.calibration_source}", "CSM")
             self.append_research_log(
-                "Publication averaging range: the Error-bar placement start/end controls define "
-                f"the averaging window ({target_x_range[0]:g} to {target_x_range[1]:g} nm). "
-                f"The step ({target_x_range[2]:g} nm) defines the shared depth grid for CSM profiles.",
+                "CSM profile and publication averaging window: "
+                f"{depth_range[0]:g} to {depth_range[1]:g} nm. "
+                "Discrete error bars are placed independently at "
+                f"{error_bar_range[0]:g} to {error_bar_range[1]:g} nm "
+                f"every {error_bar_range[2]:g} nm.",
                 "CSM"
             )
             self.append_research_log(
@@ -3590,11 +3648,12 @@ OVERALL VERDICT
             results = analyzer.analyze_file(
                 file_path,
                 test_numbers,
-                depth_range=(target_x_range[0], target_x_range[1]),
-                target_x_range=target_x_range,
+                depth_range=depth_range,
+                target_x_range=None,
                 offsets_nm=offsets,
                 recalculate=recalculate,
             )
+            results["error_bar_range"] = error_bar_range
             self.progress_bar.setValue(80)
             averaged = results["averaged"]
             if averaged.empty:
@@ -3603,7 +3662,7 @@ OVERALL VERDICT
             publication_summary = self._summarize_csm_publication_values(
                 results["raw"],
                 results["test_numbers"],
-                (target_x_range[0], target_x_range[1]),
+                depth_range,
             )
             results["publication_summary"] = publication_summary
             self.csm_results = results
@@ -3624,12 +3683,7 @@ OVERALL VERDICT
                 "CSM"
             )
             self._log_csm_publication_summary(publication_summary)
-            current_step = self.workflow_tabs.currentIndex() if self.workflow_tabs else -1
-            if self.results_panel_tabs and current_step >= 3:
-                for i in range(self.results_panel_tabs.count()):
-                    if self.results_panel_tabs.tabText(i) == "CSM Depth Profiles":
-                        self.results_panel_tabs.setCurrentIndex(i)
-                        break
+            self._show_workflow_results("CSM Depth Profiles")
             self._configure_results_panel_visibility()
             self.update_results_summary_strip()
             self.progress_bar.setValue(100)
@@ -6578,6 +6632,8 @@ OVERALL VERDICT
             self.export_csv_button.setEnabled(not loading_curve_preview)
             self.unlock_workflow_step(2)
             self.unlock_workflow_step(3)
+            if not loading_curve_preview:
+                self.unlock_workflow_step(4)
             self.unlock_workflow_tab("Expert Mode")
             self.unlock_workflow_tab("Log")
             if self.step2_next_button:
@@ -6620,12 +6676,8 @@ OVERALL VERDICT
             
             if normalized_results:
                 self.create_plot_tabs(normalized_results)
-                # Switch right panel to Reliability tab after analysis
-                if self.results_panel_tabs:
-                    for i in range(self.results_panel_tabs.count()):
-                        if self.results_panel_tabs.tabText(i) == 'Reliability':
-                            self.results_panel_tabs.setCurrentIndex(i)
-                            break
+                if not loading_curve_preview:
+                    self._show_workflow_results("Reliability")
         
         else:
             self.log_widget.append("⚠️ No valid results obtained from analysis")
