@@ -1,7 +1,9 @@
 PyQt5
+PyQtWebEngine
 matplotlib
 pandas
 numpy
 scipy
 xlrd
 openpyxl
+plotly

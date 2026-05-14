@@ -4,7 +4,12 @@
 
 echo "🔬 Launching Nanoindentation Analysis GUI..."
 echo "📁 Location: $(pwd)"
-echo "🐍 Python: $(which python3)"
+if [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+else
+    PYTHON_BIN="$(which python3)"
+fi
+echo "🐍 Python: $PYTHON_BIN"
 echo "🖥️  Display: $DISPLAY"
 echo ""
 
@@ -13,12 +18,14 @@ echo ""
 
 # Check if required packages are installed
 echo "Checking dependencies..."
-python3 -c "import PyQt5; print('✅ PyQt5 installed')" 2>/dev/null || { echo "❌ PyQt5 not found. Installing..."; pip3 install PyQt5; }
-python3 -c "import matplotlib; print('✅ matplotlib installed')" 2>/dev/null || { echo "❌ matplotlib not found. Installing..."; pip3 install matplotlib; }
-python3 -c "import pandas; print('✅ pandas installed')" 2>/dev/null || { echo "❌ pandas not found. Installing..."; pip3 install pandas; }
-python3 -c "import numpy; print('✅ numpy installed')" 2>/dev/null || { echo "❌ numpy not found. Installing..."; pip3 install numpy; }
-python3 -c "import scipy; print('✅ scipy installed')" 2>/dev/null || { echo "❌ scipy not found. Installing..."; pip3 install scipy; }
-python3 -c "import xlrd; print('✅ xlrd installed')" 2>/dev/null || { echo "❌ xlrd not found. Installing..."; pip3 install xlrd; }
+"$PYTHON_BIN" -c "import PyQt5; print('✅ PyQt5 installed')" 2>/dev/null || { echo "❌ PyQt5 not found. Installing..."; "$PYTHON_BIN" -m pip install PyQt5; }
+"$PYTHON_BIN" -c "import matplotlib; print('✅ matplotlib installed')" 2>/dev/null || { echo "❌ matplotlib not found. Installing..."; "$PYTHON_BIN" -m pip install matplotlib; }
+"$PYTHON_BIN" -c "import pandas; print('✅ pandas installed')" 2>/dev/null || { echo "❌ pandas not found. Installing..."; "$PYTHON_BIN" -m pip install pandas; }
+"$PYTHON_BIN" -c "import numpy; print('✅ numpy installed')" 2>/dev/null || { echo "❌ numpy not found. Installing..."; "$PYTHON_BIN" -m pip install numpy; }
+"$PYTHON_BIN" -c "import scipy; print('✅ scipy installed')" 2>/dev/null || { echo "❌ scipy not found. Installing..."; "$PYTHON_BIN" -m pip install scipy; }
+"$PYTHON_BIN" -c "import xlrd; print('✅ xlrd installed')" 2>/dev/null || { echo "❌ xlrd not found. Installing..."; "$PYTHON_BIN" -m pip install xlrd; }
+"$PYTHON_BIN" -c "import plotly; print('✅ plotly installed')" 2>/dev/null || { echo "❌ plotly not found. Installing..."; "$PYTHON_BIN" -m pip install plotly; }
+"$PYTHON_BIN" -c "from PyQt5.QtWebEngineWidgets import QWebEngineView; print('✅ PyQtWebEngine installed')" 2>/dev/null || { echo "❌ PyQtWebEngine not found. Installing..."; "$PYTHON_BIN" -m pip install PyQtWebEngine; }
 
 echo ""
 echo "🚀 Starting GUI application..."
@@ -30,7 +37,7 @@ echo "   • Restructured modular architecture"
 echo ""
 
 # Launch the GUI from the new structure
-python3 -c "
+"$PYTHON_BIN" -c "
 import sys
 sys.path.insert(0, '.')
 from src.gui.main_interface import NanoindentationGUI

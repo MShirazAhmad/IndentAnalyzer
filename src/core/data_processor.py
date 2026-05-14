@@ -10,6 +10,7 @@ import xlrd
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 from pathlib import Path
+import importlib.util
 
 # Import from local modules
 try:
@@ -23,12 +24,28 @@ class ExcelDataLoader:
     
     def __init__(self):
         self.config = AnalysisConfig()
+        self.loader_module_name = "AgilentG200"
         # Import here to avoid circular imports
         try:
             from .validators import DataValidator
         except ImportError:
             from .validators import DataValidator
         self.validator = DataValidator()
+
+    def set_loader(self, loader_module_name: str):
+        self.loader_module_name = loader_module_name or "AgilentG200"
+
+    def _load_selected_loader(self):
+        loader_dir = Path(__file__).resolve().parent.parent / "fileloader"
+        loader_path = loader_dir / f"{self.loader_module_name}.py"
+        if not loader_path.exists():
+            raise FileNotFoundError(f"File loader not found: {loader_path}")
+        spec = importlib.util.spec_from_file_location(f"fileloader.{self.loader_module_name}", loader_path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Could not import file loader: {loader_path}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
         
     def load_excel_file(self, file_path: Union[str, Path]) -> Dict[str, any]:
         """
@@ -54,11 +71,17 @@ class ExcelDataLoader:
             results['errors'].append(f"File not found: {file_path}")
             return results
         
-        if file_path.suffix.lower() not in ['.xls', '.xlsx']:
-            results['errors'].append(f"Unsupported file format: {file_path.suffix}")
-            return results
-        
         try:
+            loader = self._load_selected_loader()
+            if hasattr(loader, "load_file"):
+                loaded = loader.load_file(file_path)
+                if isinstance(loaded, dict):
+                    return loaded
+
+            if file_path.suffix.lower() not in ['.xls', '.xlsx']:
+                results['errors'].append(f"Unsupported file format: {file_path.suffix}")
+                return results
+
             # Try to read with pandas first
             try:
                 # Read all sheets

@@ -26,9 +26,10 @@ except ImportError:
     from analysis.mechanical_calculator import MechanicalPropertiesCalculator, TipCalibration
 
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure module logger without mutating global/root logging handlers.
 logger = logging.getLogger(__name__)
+if not logger.handlers:
+    logger.addHandler(logging.NullHandler())
 
 
 class NanoindentationAnalyzer:

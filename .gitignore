@@ -60,6 +60,8 @@ Thumbs.db
 # Logs and runtime files
 *.log
 IndentXLSAnalyzer_logs/
+samples/*_offsets.csv
+samples/calibration_profile.json
 
 # Temporary files
 tmp/
