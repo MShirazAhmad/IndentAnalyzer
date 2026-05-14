@@ -1018,3 +1018,13 @@ Do not rely on $R^2$ alone. Inspect the curve in the **Test Plot** tab. Exclude 
 ### Final average changes after excluding a test
 
 This is expected. The software recalculates the mean, standard deviation, and coefficient of variation using only the included tests.
+
+---
+
+## 9. License
+
+Copyright (c) 2026 M Shiraz Ahmad.
+
+This repository is licensed under the Creative Commons Attribution-NoDerivatives 4.0 International License (CC BY-ND 4.0). You may share the material with attribution, but you may not distribute modified versions.
+
+See [LICENSE](LICENSE) or https://creativecommons.org/licenses/by-nd/4.0/ for the full license terms.
