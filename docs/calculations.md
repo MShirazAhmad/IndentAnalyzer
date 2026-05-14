@@ -1,6 +1,6 @@
 # Mathematical Calculations
 
-This page documents the calculations implemented in `src/analysis`, `src/calibration`, and `src/core`. Variable names match the code where possible so the equation can be traced directly into the generated API reference.
+This page documents the calculations implemented in `src/analysis`, `src/calibration`, and `src/core`. Variable names match the code where possible so the equation can be traced directly into the generated code reference.
 
 ## Units Used Internally
 

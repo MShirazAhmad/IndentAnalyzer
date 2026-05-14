@@ -1,6 +1,6 @@
 # Module Guide
 
-The API Reference is generated from every Python file under `src/`. This guide explains what each module does before you jump into the generated source pages.
+The Code Reference is generated from every Python file under `src/`. This guide explains what each module does before you jump into the generated source pages.
 
 ## `src/__init__.py`
 
@@ -149,8 +149,8 @@ PyQt5 graphical interface for the full workflow. It provides tabs and panels for
 
 The GUI is a front end over the same analysis modules described above.
 
-## Generated API Reference
+## Generated Code Reference
 
 The generated source reference is built by `docs/gen_ref_pages.py`. During `mkdocs build`, it creates pages under `reference/` for each module listed here and uses `mkdocstrings` to render docstrings, signatures, members, and source code.
 
-Open **API Reference** in the published documentation to browse the exact code for each `.py` file.
+Open **Code Reference** in the published documentation to browse the exact code for each `.py` file.

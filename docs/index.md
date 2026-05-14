@@ -2,7 +2,7 @@
 
 IndentAnalyzer is a Python application for nanoindentation analysis of Agilent Nano Indenter G200 Excel exports. It combines a PyQt GUI, a normalized file-loader interface, preprocessing and validation tools, Oliver-Pharr unloading fits, NIST-style calibration helpers, and ISO 14577-aligned hardness and modulus calculations.
 
-The documentation is built for Read the Docs with MkDocs Material. It contains both extended user-facing explanations and an auto-generated API reference for every Python module under `src/`.
+The documentation is built for Read the Docs with MkDocs Material. It contains both extended user-facing explanations and an auto-generated code reference for every Python module under `src/`.
 
 ## What the Software Does
 
@@ -25,7 +25,8 @@ IndentAnalyzer turns raw load-displacement spreadsheets into per-indent and summ
 - **Code Workflow** follows data through the working code from file load to final result.
 - **Calculations** documents the mathematical equations, unit conversions, thresholds, and quality calculations used in the implementation.
 - **Module Guide** explains each `src/**/*.py` file and points to the generated source reference.
-- **API Reference** is generated during the MkDocs build from the source tree, with source code visible on each module page.
+- **Function Reference** documents the important classes and functions in a Django-style reference format.
+- **Code Reference** is generated during the MkDocs build from the source tree, with source code visible on each module page.
 - **Read the Docs Setup** explains how publishing works from GitHub to Read the Docs.
 
 ## Repository Links

@@ -33,7 +33,7 @@ for path in sorted(source_root.rglob("*.py")):
 
 
 with mkdocs_gen_files.open("reference/index.md", "w") as index_file:
-    index_file.write("# API Reference\n\n")
+    index_file.write("# Code Reference\n\n")
     index_file.write(
         "The pages in this section are generated from the Python modules under `src/`.\n"
     )

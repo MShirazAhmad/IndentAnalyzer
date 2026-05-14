@@ -1,6 +1,6 @@
 # Publishing
 
-This page is for maintainers who publish the documentation site. Regular users can start with Installation, Features, Code Workflow, Calculations, and the API Reference.
+This page is for maintainers who publish the documentation site. Regular users can start with Installation, Features, Code Workflow, Calculations, Function Reference, and Code Reference.
 
 ## Read the Docs Build
 
@@ -37,13 +37,13 @@ The `site/` directory is a build output and does not need to be committed.
 
 ## Source Code Reference
 
-The API Reference is generated during the MkDocs build from the Python files under `src/`. This keeps the published documentation synchronized with the actual code on the branch being built.
+The Code Reference is generated during the MkDocs build from the Python files under `src/`. This keeps the published documentation synchronized with the actual code on the branch being built.
 
-When a new Python module is added under `src/`, it is automatically included in the generated API Reference during the next documentation build.
+When a new Python module is added under `src/`, it is automatically included in the generated Code Reference during the next documentation build.
 
 ## Maintainer Notes
 
 - The documentation build does not need to launch the PyQt GUI.
 - Hand-written pages live under `docs/`.
-- The generated API Reference is created at build time, so generated `docs/reference/` files should not be committed.
+- The generated Code Reference is created at build time, so generated `docs/reference/` files should not be committed.
 - Math equations are rendered by MathJax through the MkDocs configuration.

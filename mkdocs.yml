@@ -22,8 +22,9 @@ nav:
   - Code Workflow: code-workflow.md
   - Calculations: calculations.md
   - Module Guide: modules.md
+  - Function Reference: function-reference.md
   - Publishing: readthedocs.md
-  - API Reference: reference/index.md
+  - Code Reference: reference/index.md
   - License: license.md
 
 plugins:

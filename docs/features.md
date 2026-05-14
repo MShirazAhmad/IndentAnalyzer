@@ -83,6 +83,6 @@ Displacement (nm)
 
 - Modular package layout under `src/`.
 - Separate loader, core preprocessing, validation, fitting, calibration, analysis, CSM, and GUI layers.
-- Auto-generated API reference for every `.py` file.
+- Auto-generated code reference for every `.py` file.
 - Read the Docs configuration through `.readthedocs.yaml`.
 - Local documentation build with `mkdocs build --clean --strict`.
