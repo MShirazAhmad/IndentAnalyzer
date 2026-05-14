@@ -825,6 +825,7 @@ class NanoindentationGUI(QMainWindow):
         self.results_summary_label: Optional[QLabel] = None
         self.results_view_help_label: Optional[QLabel] = None
         self.reliability_widget: Optional[MatplotlibWidget] = None
+        self.summary_statistics_text: Optional[QTextEdit] = None
         self.single_test_plot: Optional[MatplotlibWidget] = None
         self.current_test_index: int = 0
         self.test_nav_label: Optional[QLabel] = None
@@ -1586,7 +1587,7 @@ OVERALL VERDICT
         if workflow_title.startswith("1. Calibration"):
             visible_titles = {"Calibration", "Calibration Metrics"}
         elif workflow_title in ("2. Load File", "3. Settings"):
-            visible_titles = {"Reliability", "Curve Viewer"} if has_loading_results else set()
+            visible_titles = {"Reliability", "Summary Statistics", "Curve Viewer"} if has_loading_results else set()
         elif workflow_title == "Expert Mode":
             visible_titles = {"Expert Plot"}
         elif workflow_title == "Log":
@@ -1595,7 +1596,7 @@ OVERALL VERDICT
             visible_titles = (
                 {"CSM Depth Profiles", "CSM Averaged Data"}
                 if mode == "CSM"
-                else {"Reliability", "Curve Viewer", "Results Table"}
+                else {"Reliability", "Summary Statistics", "Curve Viewer", "Results Table"}
             )
 
         all_titles = [
@@ -1603,6 +1604,7 @@ OVERALL VERDICT
             "Calibration Metrics",
             "Results Table",
             "Reliability",
+            "Summary Statistics",
             "Curve Viewer",
             "Log",
             "CSM Depth Profiles",
@@ -1618,7 +1620,7 @@ OVERALL VERDICT
                 self.results_panel_tabs.setCurrentIndex(idx)
             return
 
-        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Reliability", "Curve Viewer", "CSM Averaged Data", "Results Table"):
+        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Reliability", "Summary Statistics", "Curve Viewer", "CSM Averaged Data", "Results Table"):
             if preferred not in visible_titles:
                 continue
             idx = self._results_tab_index(preferred)
@@ -1629,7 +1631,14 @@ OVERALL VERDICT
 
     def _show_workflow_results(self, preferred_results_tab: str):
         """Move the workflow to Results and focus a populated right-side results tab."""
-        self.unlock_workflow_step(3, move_to_step=True)
+        current_title = ""
+        if self.workflow_tabs:
+            current_idx = self.workflow_tabs.currentIndex()
+            current_title = self.workflow_tabs.tabText(current_idx) if current_idx >= 0 else ""
+        if current_title == "3. Settings":
+            self.unlock_workflow_step(3, move_to_step=True)
+        elif current_title != "4. Results":
+            return
         self._configure_results_panel_visibility()
         if self.results_panel_tabs:
             idx = self._results_tab_index(preferred_results_tab)
@@ -1803,22 +1812,10 @@ OVERALL VERDICT
                 f"✅ Calibration generated from silica file: {Path(file_path).name} "
                 f"(R²={r2:.4f}, points={npts})"
             )
-            # Auto-run analysis on the same silica file using the newly generated calibration
-            self.file_path_edit.setText(str(Path(file_path).resolve()))
-            self.reload_button.setEnabled(True)
-            self.analyze_button.setEnabled(True)
-            self.step2_next_button.setEnabled(True)
-            self.pending_analysis_context = (
-                f"Calibration self-check on file: {Path(file_path).name}"
-            )
             self.unlock_workflow_step(1, move_to_step=False)
-            self.unlock_workflow_step(2, move_to_step=False)
-            self.unlock_workflow_step(3, move_to_step=False)
-            self.unlock_workflow_tab("Expert Mode", move_to_tab=False)
-            self.log_widget.append("🔁 Auto-run: analyzing the same silica file with the new calibration...")
-            self.status_bar.showMessage("Calibration generated. Running analysis on the same silica file...")
-            self.refresh_live_plot_source()
-            self.start_analysis()
+            self.status_bar.showMessage(
+                "Calibration generated. Select an unknown-sample experiment file in Step 2."
+            )
         except Exception as e:
             QMessageBox.critical(self, "Calibration Error", f"Failed to generate calibration:\n{str(e)}")
     
@@ -1906,7 +1903,7 @@ OVERALL VERDICT
         """)
         row.addWidget(iso_badge)
 
-        self.header_file_label = QLabel("No file selected")
+        self.header_file_label = QLabel("No experiment file selected")
         self.header_file_label.setStyleSheet(f"font-size:{self.fp(11)}px; color:#5e6a72;")
         self.header_file_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         row.addWidget(self.header_file_label, 1)
@@ -1915,6 +1912,17 @@ OVERALL VERDICT
         wrapper.setSpacing(self.sp(2))
         wrapper.addWidget(bar)
         return wrapper
+
+    def update_header_experiment_file(self, file_path: Optional[str] = None):
+        """Show only the selected unknown-sample experiment file in the app header."""
+        if not self.header_file_label:
+            return
+        if file_path:
+            self.header_file_label.setText(Path(file_path).name)
+            self.header_file_label.setToolTip(str(Path(file_path).resolve()))
+        else:
+            self.header_file_label.setText("No experiment file selected")
+            self.header_file_label.setToolTip("")
 
     def create_workflow_top_tab_bar(self) -> QTabBar:
         """Create a full-width workflow tab bar that controls the left workflow pages."""
@@ -2645,6 +2653,26 @@ OVERALL VERDICT
         self.reliability_widget = MatplotlibWidget()
         tab_widget.addTab(self.reliability_widget, "Reliability")
 
+        self.summary_statistics_text = QTextEdit()
+        self.summary_statistics_text.setReadOnly(True)
+        summary_font = QFont()
+        summary_font.setFamily("Menlo")
+        summary_font.setPointSize(11)
+        self.summary_statistics_text.setFont(summary_font)
+        self.summary_statistics_text.setPlainText("Summary statistics will appear after analysis.")
+        self.summary_statistics_text.setStyleSheet(f"""
+            QTextEdit {{
+                background:#f8fbfc;
+                color:#24313a;
+                border:1px solid #d6dbe0;
+                border-left:5px solid #00a8cc;
+                border-radius:{self.sp(6)}px;
+                padding:{self.sp(14)}px;
+                selection-background-color:#c8e8ef;
+            }}
+        """)
+        tab_widget.addTab(self.summary_statistics_text, "Summary Statistics")
+
         # ── Tab 3: Single test plot with prev/next navigation ─────────────
         test_plot_container = QWidget()
         vbox = QVBoxLayout(test_plot_container)
@@ -2757,8 +2785,9 @@ OVERALL VERDICT
             "Log": "Timestamped session audit trail.",
             "Calibration": "Tip area function and calibration reliability view.",
             "Calibration Metrics": "Numeric calibration quality assessment and overall verdict.",
+            "Summary Statistics": "Numeric final statistics for included tests.",
         }
-        for title in ("Calibration", "Calibration Metrics", "Reliability", "Curve Viewer", "Results Table", "CSM Depth Profiles", "CSM Averaged Data", "Expert Plot", "Log"):
+        for title in ("Calibration", "Calibration Metrics", "Reliability", "Summary Statistics", "Curve Viewer", "Results Table", "CSM Depth Profiles", "CSM Averaged Data", "Expert Plot", "Log"):
             btn = QPushButton(title)
             btn.setCheckable(True)
             btn.setProperty("viewSwitch", True)
@@ -2815,6 +2844,7 @@ OVERALL VERDICT
             "Log": "Log records file choices, settings, exclusions, final values, and exports.",
             "Calibration": "Calibration shows the active tip area function and calibration reliability.",
             "Calibration Metrics": "Calibration Metrics shows the numeric quality assessment separately from the plots.",
+            "Summary Statistics": "Summary Statistics lists final hardness, modulus, and fit-quality statistics for included tests.",
         }
         if self.results_view_help_label is not None:
             self.results_view_help_label.setText(help_text.get(current_title, ""))
@@ -4345,6 +4375,8 @@ OVERALL VERDICT
         if self.reliability_widget:
             self.reliability_widget.figure.clear()
             self.reliability_widget.canvas.draw()
+        if self.summary_statistics_text:
+            self.summary_statistics_text.setPlainText("Summary statistics will appear after analysis.")
         if self.single_test_plot:
             self.single_test_plot.figure.clear()
             self.single_test_plot.canvas.draw()
@@ -4593,6 +4625,8 @@ OVERALL VERDICT
                 transform=ax.transAxes
             )
             self.reliability_widget.canvas.draw()
+            if self.summary_statistics_text:
+                self.summary_statistics_text.setPlainText("No tests selected for final calculations.")
 
         if self.step4_plot_buttons_note:
             self.step4_plot_buttons_note.setText(
@@ -5002,11 +5036,11 @@ OVERALL VERDICT
             loading_r2 = [point[2] for point in loading_points]
             unloading_r2 = [point[2] for point in unloading_points]
 
-            ax1 = fig.add_subplot(2, 2, 1)
-            ax2 = fig.add_subplot(2, 2, 2)
-            ax3 = fig.add_subplot(2, 2, 3)
-            ax4 = fig.add_subplot(2, 2, 4)
-            for _ax in (ax1, ax2, ax3, ax4):
+            gs = fig.add_gridspec(2, 2, height_ratios=[1.15, 1.0])
+            ax1 = fig.add_subplot(gs[0, :])
+            ax2 = fig.add_subplot(gs[1, 0])
+            ax3 = fig.add_subplot(gs[1, 1])
+            for _ax in (ax1, ax2, ax3):
                 _ax.set_facecolor('#ffffff')
                 for spine in _ax.spines.values():
                     spine.set_edgecolor('#d6dbe0')
@@ -5047,8 +5081,6 @@ OVERALL VERDICT
                 ax1.set_title('Curve Fit Quality', fontweight='bold')
 
             # ── Panel 2: Hardness distribution ────────────────────────────────
-            _stat_box = dict(boxstyle='round,pad=0.5', facecolor='#ffffff',
-                             edgecolor='#00a8cc', linewidth=1.2, alpha=0.95)
             if hardness_values:
                 mu_h, sd_h = np.mean(hardness_values), np.std(hardness_values)
                 n_bins = min(15, max(4, len(hardness_values) // 2))
@@ -5086,9 +5118,6 @@ OVERALL VERDICT
                          transform=ax3.transAxes, color='#888888')
                 ax3.set_title('Reduced Modulus Distribution', fontweight='bold')
 
-            # ── Panel 4: Summary statistics ────────────────────────────────────
-            ax4.axis('off')
-            ax4.set_facecolor('#ffffff')
             pass_loading   = sum(1 for r in loading_r2   if r >= 0.99)
             pass_unloading = sum(1 for r in unloading_r2 if r >= 0.99)
 
@@ -5119,12 +5148,8 @@ OVERALL VERDICT
                 f"  Unloading pass: {pass_unloading}/{len(unloading_r2)}",
                 f"  Total tests  : {n_tests}"]
 
-            ax4.text(0.05, 0.95, "\n".join(summary_stats), transform=ax4.transAxes,
-                     fontfamily='monospace', fontsize=9, color='#24313a',
-                     verticalalignment='top',
-                     bbox=dict(boxstyle='round,pad=0.9', facecolor='#ffffff',
-                               edgecolor='#00a8cc', linewidth=1.5, alpha=0.95))
-            ax4.set_title('Summary Statistics', fontweight='bold', fontsize=11, color='#24313a')
+            if self.summary_statistics_text:
+                self.summary_statistics_text.setPlainText("\n".join(summary_stats))
 
             fig.text(
                 0.5, 0.005,
@@ -6093,6 +6118,7 @@ OVERALL VERDICT
         
         if file_path:
             self.file_path_edit.setText(file_path)
+            self.update_header_experiment_file(file_path)
             self.csm_file_path = file_path
             self.reload_button.setEnabled(True)
             self.analyze_button.setEnabled(False)
