@@ -18,7 +18,7 @@ The results panel provides separate views for calibration output, the results ta
 
 Calibration converts contact depth into projected contact area for downstream hardness and modulus calculations.
 
-![Calibration tab](screenshots/Screenshot%202026-05-01%20at%2010.03.35%E2%80%AFAM.png)
+![Calibration tab](screenshots/calibration-tab.png)
 
 Available calibration paths:
 
@@ -40,7 +40,7 @@ $$
 
 ## Step 2 — Select the fused-silica calibration file
 
-![Fused silica file selection](screenshots/Screenshot%202026-05-01%20at%2010.03.48%E2%80%AFAM.png)
+![Fused silica file selection](screenshots/calibration-file.png)
 
 The built-in reference workflow uses fused silica with:
 
@@ -60,7 +60,7 @@ $$
 
 ## Step 3 — Review calibration reliability
 
-![Calibration reliability](screenshots/Screenshot%202026-05-01%20at%2010.03.56%E2%80%AFAM.png)
+![Calibration reliability](screenshots/calibration-reliability.png)
 
 Review fit quality, hardness distribution, reduced modulus distribution, and accepted calibration tests before analyzing unknown samples.
 
@@ -72,7 +72,7 @@ $$
 
 ## Step 4 — Load the unknown sample file
 
-![Unknown sample file selection](screenshots/Screenshot%202026-05-01%20at%2010.04.10%E2%80%AFAM.png)
+![Unknown sample file selection](screenshots/load-sample-file.png)
 
 The software identifies the maximum load and associated displacement:
 
@@ -86,13 +86,13 @@ $$
 
 ## Step 5 — Confirm the loaded sample
 
-![Loaded sample confirmation](screenshots/Screenshot%202026-05-01%20at%2010.04.19%E2%80%AFAM.png)
+![Loaded sample confirmation](screenshots/sample-loaded.png)
 
 Each indentation test is analyzed independently, and final summary values are calculated only from the currently included tests.
 
 ## Step 6 — Choose analysis settings
 
-![Analysis settings](screenshots/Screenshot%202026-05-01%20at%2010.04.24%E2%80%AFAM.png)
+![Analysis settings](screenshots/analysis-settings.png)
 
 Current GUI settings include:
 
@@ -124,7 +124,7 @@ $$
 
 ## Step 7 — Run the analysis
 
-![Run analysis tab](screenshots/Screenshot%202026-05-01%20at%2010.04.31%E2%80%AFAM.png)
+![Run analysis tab](screenshots/run-analysis.png)
 
 The contact depth is calculated as:
 
@@ -140,7 +140,7 @@ $$
 
 ## Step 8 — Inspect the results table
 
-![Results table](screenshots/Screenshot%202026-05-01%20at%2010.04.48%E2%80%AFAM.png)
+![Results table](screenshots/results-table.png)
 
 Typical columns include source file, test identifier, hardness, modulus, fit quality, loading-fit parameters, and key mechanical quantities such as stiffness and contact depth.
 
@@ -158,7 +158,7 @@ $$
 
 ## Step 9 — Review reliability statistics
 
-![Reliability summary](screenshots/Screenshot%202026-05-01%20at%2010.04.55%E2%80%AFAM.png)
+![Reliability summary](screenshots/reliability-summary.png)
 
 The reliability panel summarizes spread across accepted tests with mean, standard deviation, and coefficient of variation.
 
@@ -176,7 +176,7 @@ $$
 
 ## Step 10 — Inspect an individual test curve
 
-![Individual test plot](screenshots/Screenshot%202026-05-01%20at%2010.05.09%E2%80%AFAM.png)
+![Individual test plot](screenshots/individual-test-plot.png)
 
 The individual test view separates the curve display from the formatted results summary. Use it to inspect loading data, unloading data, fitted curves, stiffness tangent, residual depth, contact depth, and maximum depth.
 
@@ -188,7 +188,7 @@ $$
 
 ## Step 11 — Exclude a questionable test
 
-![Exclude test](screenshots/Screenshot%202026-05-01%20at%2010.05.19%E2%80%AFAM.png)
+![Exclude test](screenshots/exclude-test.png)
 
 Exclude tests that pass the numerical threshold but are not physically trustworthy, for example because of:
 
@@ -207,6 +207,6 @@ $$
 
 ## Step 12 — Review the analysis log
 
-![Analysis log](screenshots/Screenshot%202026-05-01%20at%2010.05.25%E2%80%AFAM.png)
+![Analysis log](screenshots/analysis-log.png)
 
 The log records file loading, calibration origin, accepted tests, excluded tests, and recalculated averages. Treat it as the session record that supports reproducibility when final values are exported or reported.

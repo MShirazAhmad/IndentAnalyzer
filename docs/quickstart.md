@@ -33,24 +33,24 @@ bash scripts/launch_application.sh
 
 Load an existing profile, generate a calibration from fused silica, or enter coefficients manually.
 
-![Calibration tab](screenshots/Screenshot%202026-05-01%20at%2010.03.35%E2%80%AFAM.png)
+![Calibration tab](screenshots/calibration-tab.png)
 
 ## Step 3: load an experiment file
 
 Choose the unknown sample Excel export.
 
-![Load experiment file](screenshots/Screenshot%202026-05-01%20at%2010.04.10%E2%80%AFAM.png)
+![Load experiment file](screenshots/load-sample-file.png)
 
 ## Step 4: confirm settings and run analysis
 
 Set the fit threshold, unloading fit fraction, sample Poisson ratio, indenter, and fitting method, then start the analysis.
 
-![Run analysis](screenshots/Screenshot%202026-05-01%20at%2010.04.31%E2%80%AFAM.png)
+![Run analysis](screenshots/run-analysis.png)
 
 ## Step 5: review and export
 
 Inspect the results table, reliability summaries, and individual curves before exporting the included results.
 
-![Results table](screenshots/Screenshot%202026-05-01%20at%2010.04.48%E2%80%AFAM.png)
+![Results table](screenshots/results-table.png)
 
 For the full annotated workflow, continue to {doc}`workflow`.

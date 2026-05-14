@@ -20,7 +20,7 @@ source .venv/bin/activate
 
 Command Prompt:
 
-```cmd
+```bat
 python -m venv .venv
 .venv\Scripts\activate.bat
 ```
