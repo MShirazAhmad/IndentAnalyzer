@@ -1,5 +1,7 @@
 # IndentAnalyzer: Open-Source Nanoindentation Analysis Software
 
+![IndentAnalyzer documentation icon](https://github.com/user-attachments/assets/636c922f-8742-4f5e-82f5-0a4a1da1ee37)
+
 **A Python-based GUI and analysis framework for indentation data processing, Oliver–Pharr mechanical property extraction, CSM analysis, calibration, visualization, and reproducible scientific reporting.**
 
 ---
