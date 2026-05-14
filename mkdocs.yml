@@ -19,6 +19,8 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Features: features.md
+  - File Loaders: file-loaders.md
+  - Analysis Configuration: analysis-configuration.md
   - Code Workflow: code-workflow.md
   - Calculations: calculations.md
   - Module Guide: modules.md

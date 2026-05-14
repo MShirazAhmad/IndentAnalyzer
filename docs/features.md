@@ -6,6 +6,7 @@ IndentAnalyzer is organized around the complete nanoindentation workflow: import
 
 - Agilent Nano Indenter G200 `.xls` and `.xlsx` exports.
 - Multi-sheet workbooks where indentation tests are stored as `Test ###` sheets.
+- A modular file-loader layer so other instrument/file formats can be supported by adding a new loader under `src/fileloader/`.
 - Vendor-sheet normalization to a common analyzer structure:
 
 ```text

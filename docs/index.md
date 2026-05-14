@@ -22,6 +22,8 @@ IndentAnalyzer turns raw load-displacement spreadsheets into per-indent and summ
 
 - **Installation** explains the local environment, GUI launch command, and documentation build command.
 - **Features** gives the full feature set from a user and developer point of view.
+- **File Loaders** explains why loaders exist, how Agilent G200 files are normalized, and how to add support for another file format.
+- **Analysis Configuration** explains editable thresholds, material defaults, validation limits, and where to change them.
 - **Code Workflow** follows data through the working code from file load to final result.
 - **Calculations** documents the mathematical equations, unit conversions, thresholds, and quality calculations used in the implementation.
 - **Module Guide** explains each `src/**/*.py` file and points to the generated source reference.
