@@ -449,3 +449,54 @@ $$
 $$
 x < Q_1 - 1.5\,\mathrm{IQR} \quad \text{or} \quad x > Q_3 + 1.5\,\mathrm{IQR}
 $$
+
+These summaries help the user report central tendency, data spread, and possible outliers in a transparent way. Outlier flags should be reviewed alongside curve shape and experimental notes before final exclusion.
+
+Code location: `src/analysis/statistics.py`
+
+---
+
+## 8. Limitations and good scientific practice
+
+IndentAnalyzer is designed to make nanoindentation analysis transparent and reproducible, but several limitations remain:
+
+- Results are only as reliable as the input data quality.
+- Surface roughness, drift, tip wear, and poor contact detection can strongly affect shallow-depth results.
+- CSM profiles at low depth are sensitive to harmonic settings and noise.
+- The chosen sample Poisson ratio directly changes calculated sample modulus.
+- Curve fitting quality metrics (such as \(R^2\)) should not be used alone to accept a test.
+
+For publication-quality reporting, users should describe calibration status, exclusion criteria, fitting method, area-function assumptions, and uncertainty metrics.
+
+---
+
+## 9. Reproducibility and reporting recommendations
+
+To support reproducible materials research, final reports should include:
+
+1. Instrument model and indenter type.
+2. Reference material(s) used for calibration.
+3. Loading protocol and maximum load or depth.
+4. Fitting model used for unloading analysis.
+5. Area-function form and coefficients.
+6. Sample Poisson ratio used for modulus conversion.
+7. Number of accepted and excluded tests, with criteria.
+8. Mean, standard deviation, and coefficient of variation for reported properties.
+
+These reporting items help readers evaluate whether measured hardness and modulus trends are physically meaningful and comparable across studies.
+
+---
+
+## References
+
+[1] W. C. Oliver and G. M. Pharr, “An improved technique for determining hardness and elastic modulus using load and displacement sensing indentation experiments,” *Journal of Materials Research*, 7(6), 1564–1583 (1992).  
+[2] I. N. Sneddon, “The relation between load and penetration in the axisymmetric Boussinesq problem for a punch of arbitrary profile,” *International Journal of Engineering Science*, 3(1), 47–57 (1965).  
+[3] W. C. Oliver and G. M. Pharr, “Measurement of hardness and elastic modulus by instrumented indentation: Advances in understanding and refinements to methodology,” *Journal of Materials Research*, 19(1), 3–20 (2004).  
+[4] ISO 14577-1, *Metallic materials — Instrumented indentation test for hardness and materials parameters — Part 1: Test method* (International Organization for Standardization, Geneva).  
+[5] ISO 14577-2, *Metallic materials — Instrumented indentation test for hardness and materials parameters — Part 2: Verification and calibration of testing machines* (International Organization for Standardization, Geneva).  
+[6] ISO 14577-3, *Metallic materials — Instrumented indentation test for hardness and materials parameters — Part 3: Calibration of reference blocks* (International Organization for Standardization, Geneva).  
+[7] ISO 14577-4, *Metallic materials — Instrumented indentation test for hardness and materials parameters — Part 4: Test method for metallic and non-metallic coatings* (International Organization for Standardization, Geneva).  
+[8] A. C. Fischer-Cripps, *Nanoindentation*, 3rd ed., Springer, New York (2011).  
+[9] R. B. King, “Elastic analysis of some punch problems for a layered medium,” *International Journal of Solids and Structures*, 23(12), 1657–1664 (1987).  
+[10] J. Hay and B. Crawford, “Measuring substrate-independent modulus of thin films,” *Journal of Materials Research*, 26(6), 727–738 (2011).  
+[11] W. D. Nix and H. Gao, “Indentation size effects in crystalline materials: A law for strain gradient plasticity,” *Journal of the Mechanics and Physics of Solids*, 46(3), 411–425 (1998).
