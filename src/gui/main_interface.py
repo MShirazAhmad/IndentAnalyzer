@@ -138,9 +138,28 @@ debug_logger = setup_debug_logging()
 def resolve_app_icon_path() -> Optional[Path]:
     """Return the first available icon path from repo root, assets, then gui dir."""
     project_root = Path(__file__).resolve().parents[2]
+    # Prefer specific branding/icon files (project logo first), then common names.
     icon_candidates = (
+        project_root / "src" / "logo" / "NanoInd.png",
+        project_root / "src" / "logo" / "NanoInd.jpeg",
+        project_root / "src" / "logo" / "NanoInd.jpg",
+        project_root / "AppIcon.png",
+        project_root / "AppIcon.jpeg",
+        project_root / "AppIcon.jpg",
+        project_root / "src" / "logo" / "AppIcon.png",
+        project_root / "src" / "logo" / "AppIcon.jpeg",
+        project_root / "src" / "logo" / "AppIcon.jpg",
         project_root / "icon.png",
+        project_root / "assets" / "AppIcon.png",
+        project_root / "assets" / "AppIcon.jpeg",
+        project_root / "assets" / "AppIcon.jpg",
         project_root / "assets" / "icon.png",
+        Path(__file__).resolve().parent / "NanoInd.png",
+        Path(__file__).resolve().parent / "NanoInd.jpeg",
+        Path(__file__).resolve().parent / "NanoInd.jpg",
+        Path(__file__).resolve().parent / "AppIcon.png",
+        Path(__file__).resolve().parent / "AppIcon.jpeg",
+        Path(__file__).resolve().parent / "AppIcon.jpg",
         Path(__file__).resolve().parent / "icon.png",
     )
     for icon_path in icon_candidates:
