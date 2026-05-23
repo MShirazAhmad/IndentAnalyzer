@@ -10,6 +10,7 @@ import os
 import json
 import configparser
 import re
+import shutil
 from pathlib import Path
 import traceback
 from typing import Optional, Dict, Any, List, Set, Tuple
@@ -135,9 +136,31 @@ def setup_debug_logging():
 debug_logger = setup_debug_logging()
 
 
+def app_resource_root() -> Path:
+    """Return the repo root in development or the PyInstaller data root when frozen."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parents[2]
+
+
+def app_user_data_dir() -> Path:
+    """Writable per-user storage for config and bundled sample files."""
+    if sys.platform == "darwin":
+        data_dir = Path.home() / "Library" / "Application Support" / "IndentAnalyzer"
+    else:
+        data_dir = Path.home() / ".indentanalyzer"
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        return data_dir
+    except OSError:
+        fallback_dir = Path(gettempdir()) / "IndentAnalyzer"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        return fallback_dir
+
+
 def resolve_app_icon_path() -> Optional[Path]:
     """Return the first available icon path from repo root, assets, then gui dir."""
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = app_resource_root()
     # Prefer specific branding/icon files (project logo first), then common names.
     icon_candidates = (
         project_root / "src" / "logo" / "NanoInd.png",
@@ -1056,7 +1079,23 @@ class NanoindentationGUI(QMainWindow):
         return defaults
 
     def analysis_config_path(self) -> Path:
-        return Path(__file__).resolve().parent.parent.parent / "config" / "analysis_settings.ini"
+        user_config_path = app_user_data_dir() / "config" / "analysis_settings.ini"
+        if not user_config_path.exists():
+            bundled_config_path = app_resource_root() / "config" / "analysis_settings.ini"
+            if bundled_config_path.exists():
+                user_config_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(bundled_config_path, user_config_path)
+        return user_config_path
+
+    def samples_dir(self) -> Path:
+        user_samples_dir = app_user_data_dir() / "samples"
+        if not user_samples_dir.exists():
+            bundled_samples_dir = app_resource_root() / "samples"
+            if bundled_samples_dir.exists():
+                shutil.copytree(bundled_samples_dir, user_samples_dir)
+            else:
+                user_samples_dir.mkdir(parents=True, exist_ok=True)
+        return user_samples_dir
 
     def setup_menu_bar(self):
         """Create the application menu bar."""
@@ -1234,7 +1273,7 @@ class NanoindentationGUI(QMainWindow):
             self.refresh_live_plot_source()
 
     def fileloader_dir(self) -> Path:
-        return Path(__file__).resolve().parent.parent / "fileloader"
+        return app_resource_root() / "src" / "fileloader"
 
     def discover_file_loaders(self) -> Dict[str, Any]:
         loaders: Dict[str, Any] = {}
@@ -1724,7 +1763,7 @@ OVERALL VERDICT
             QMessageBox.critical(self, "Calibration Error", f"Failed to apply manual coefficients:\n{str(e)}")
 
     def load_calibration_file(self):
-        samples_dir = str(Path(__file__).resolve().parent.parent.parent / "samples")
+        samples_dir = str(self.samples_dir())
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Load Calibration File",
@@ -1771,7 +1810,7 @@ OVERALL VERDICT
 
     def save_calibration_file(self):
         default_name = "calibration_profile.json"
-        samples_dir = str(Path(__file__).resolve().parent.parent.parent / "samples")
+        samples_dir = str(self.samples_dir())
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Calibration File",
@@ -1805,7 +1844,7 @@ OVERALL VERDICT
             QMessageBox.critical(self, "Calibration Error", f"Failed to save calibration file:\n{str(e)}")
 
     def generate_calibration_from_silica(self):
-        samples_dir = str(Path(__file__).resolve().parent.parent.parent / "samples")
+        samples_dir = str(self.samples_dir())
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Standard Silica XLS/XLSX File",
@@ -6155,7 +6194,7 @@ OVERALL VERDICT
     
     def browse_file(self):
         """Open file dialog to select Excel file"""
-        samples_dir = str(Path(__file__).resolve().parent.parent.parent / "samples")
+        samples_dir = str(self.samples_dir())
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select Nanoindentation Data File",
@@ -6808,7 +6847,7 @@ OVERALL VERDICT
             QMessageBox.warning(self, "No Data", "No analysis results to export.")
             return
         
-        samples_dir = str(Path(__file__).resolve().parent.parent.parent / "samples")
+        samples_dir = str(self.samples_dir())
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Export Results to CSV",

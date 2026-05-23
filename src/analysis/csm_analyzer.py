@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import importlib.util
+import sys
 
 import numpy as np
 import pandas as pd
@@ -59,7 +60,8 @@ class CSMAnalyzer:
         return sorted(set(t for t in tests if t > 0))
 
     def _load_file_loader(self):
-        loader_path = Path(__file__).resolve().parent.parent / "fileloader" / f"{self.file_loader_name}.py"
+        resource_root = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else Path(__file__).resolve().parent.parent.parent
+        loader_path = resource_root / "src" / "fileloader" / f"{self.file_loader_name}.py"
         if not loader_path.exists():
             return None
         spec = importlib.util.spec_from_file_location(f"csm_fileloader_{self.file_loader_name}", loader_path)

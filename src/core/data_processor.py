@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple, Optional, Union
 import warnings
 from pathlib import Path
 import importlib.util
+import sys
 
 # Import from local modules
 try:
@@ -36,7 +37,8 @@ class ExcelDataLoader:
         self.loader_module_name = loader_module_name or "AgilentG200"
 
     def _load_selected_loader(self):
-        loader_dir = Path(__file__).resolve().parent.parent / "fileloader"
+        resource_root = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else Path(__file__).resolve().parent.parent.parent
+        loader_dir = resource_root / "src" / "fileloader"
         loader_path = loader_dir / f"{self.loader_module_name}.py"
         if not loader_path.exists():
             raise FileNotFoundError(f"File loader not found: {loader_path}")
