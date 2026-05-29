@@ -1,0 +1,7 @@
+Welcome to the IndentAnalyzer macOS installer.
+
+This installer copies IndentAnalyzer to your Applications folder.
+
+IndentAnalyzer is distributed outside the Mac App Store. If this build is not signed and notarized with an Apple Developer ID, macOS may block the first launch and show a message that the developer cannot be verified.
+
+After installation, the installer will open macOS System Settings so you can approve the app if needed.

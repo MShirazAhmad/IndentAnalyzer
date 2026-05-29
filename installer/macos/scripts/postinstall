@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_PATH="/Applications/IndentAnalyzer.app"
+
+if [ -n "${COMMAND_LINE_INSTALL:-}" ]; then
+  exit 0
+fi
+
+(
+  /bin/sleep 2
+
+  /usr/bin/open "$APP_PATH" 2>/dev/null || true
+
+  # Modern macOS uses System Settings; older releases use System Preferences.
+  /usr/bin/open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension" 2>/dev/null \
+    || /usr/bin/open "x-apple.systempreferences:com.apple.preference.security" 2>/dev/null \
+    || /usr/bin/open -b com.apple.systempreferences 2>/dev/null \
+    || true
+) >/dev/null 2>&1 &
+
+exit 0

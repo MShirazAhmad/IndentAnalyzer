@@ -1,9 +1,0 @@
-# Nanoindentation GUI Requirements
-# Generated automatically from installed packages
-
-PyQt5==5.15.11
-matplotlib==3.10.0
-pandas==2.2.3
-numpy==2.2.1
-scipy==1.15.0
-openpyxl==3.1.5

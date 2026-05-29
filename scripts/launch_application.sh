@@ -3,6 +3,13 @@
 # Launches the restructured nanoindentation analysis GUI
 
 echo "🔬 Launching Nanoindentation Analysis GUI..."
+
+# Always run from the repository root, even when this script is launched from
+# Finder, an IDE, or another working directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT" || exit 1
+
 echo "📁 Location: $(pwd)"
 if [ -x ".venv/bin/python" ]; then
     PYTHON_BIN=".venv/bin/python"
@@ -12,9 +19,6 @@ fi
 echo "🐍 Python: $PYTHON_BIN"
 echo "🖥️  Display: $DISPLAY"
 echo ""
-
-# Stay in the current directory (where the script is located)
-# cd "$(dirname "$0")/.."
 
 # Check if required packages are installed
 echo "Checking dependencies..."
@@ -42,10 +46,14 @@ import sys
 sys.path.insert(0, '.')
 from src.gui.main_interface import NanoindentationGUI
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QTimer, Qt
 
 app = QApplication(sys.argv)
 window = NanoindentationGUI()
 window.show()
+window.raise_()
+window.activateWindow()
+QTimer.singleShot(0, lambda: (window.setWindowState(window.windowState() & ~Qt.WindowMinimized), window.raise_(), window.activateWindow()))
 sys.exit(app.exec_())
 "
 

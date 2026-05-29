@@ -82,3 +82,44 @@ This is expected. Final statistics are recalculated from only included tests.
 Copyright (c) 2026 M Shiraz Ahmad.
 
 This repository is licensed under the Creative Commons Attribution-NoDerivatives 4.0 International License (CC BY-ND 4.0). You may share the material with attribution, but you may not distribute modified versions.
+
+## Build Windows EXE
+
+You can create a single-file Windows executable (`.exe`) using PyInstaller. Building for Windows must be done on Windows (PyInstaller does not reliably cross-compile from macOS).
+
+Locally on Windows (PowerShell):
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install pyinstaller
+pip install -r requirements.txt
+powershell -File scripts\build_windows_exe.ps1
+```
+
+Or use the included GitHub Actions workflow which runs on `windows-latest` and uploads the resulting EXE as an artifact. Trigger it from the Actions tab or push to `main`/`master`.
+
+## Build macOS Installer
+
+On macOS, build a clickable installer package with:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt pyinstaller
+bash scripts/build_macos_installer.sh
+```
+
+The installer is written to `dist/IndentAnalyzer-1.0.1-macOS.pkg` by default. Set `VERSION=1.2.3` to change the package filename and package metadata.
+
+Because public macOS builds should be signed and notarized, unsigned local builds may show Apple's "developer cannot be verified" message on first launch. The installer includes a readme and opens System Settings after installation to guide users to **Privacy & Security > Open Anyway**.
+
+For a signed release build:
+
+```bash
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+INSTALLER_SIGN_IDENTITY="Developer ID Installer: Your Name (TEAMID)" \
+VERSION=1.0.0 \
+bash scripts/build_macos_installer.sh
+```

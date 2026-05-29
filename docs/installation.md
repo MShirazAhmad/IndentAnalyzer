@@ -50,9 +50,22 @@ Optional live preview:
 mkdocs serve
 ```
 
+## Build a macOS installer package
+
+On macOS, create a clickable `.pkg` installer:
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements.txt pyinstaller
+bash scripts/build_macos_installer.sh
+```
+
+The package is created at `dist/IndentAnalyzer-1.0.1-macOS.pkg`. Use `VERSION=1.2.3 bash scripts/build_macos_installer.sh` to set a release version.
+
+Unsigned or unnotarized builds may be blocked by Gatekeeper on first launch. The installer opens System Settings after installation and includes the approval path: **System Settings > Privacy & Security > Open Anyway**.
+
 ## Common setup issues
 
 - **GUI fails to launch**: confirm `PyQt5` is installed from `requirements.txt` and run from an active virtual environment.
 - **File not loading**: confirm the file is an Agilent G200 `.xls`/`.xlsx` export with test sheets.
 - **Docs build failure**: run the strict build command above and resolve missing links/assets before publishing.
-
