@@ -3040,6 +3040,7 @@ OVERALL VERDICT
 
     def _set_expert_plot_html(self, body_or_html: str, already_full_html: bool = False):
         html = body_or_html if already_full_html else self._expert_plot_html_shell(body_or_html)
+        html = html.replace(":focus-visible", ":focus")
         if self.live_plot_widget is None:
             return
         if hasattr(self.live_plot_widget, "load"):
@@ -6030,7 +6031,7 @@ OVERALL VERDICT
                         hoverinfo="skip",
                         showlegend=False,
                     ))
-        self._set_expert_plot_html(fig.to_html(include_plotlyjs=True, full_html=True), already_full_html=True)
+        self._set_expert_plot_html(fig.to_html(full_html=True, include_plotlyjs=True, config={"responsive": True}), already_full_html=True)
 
         if self.live_plot_status_label is not None:
             range_note = " with custom ranges" if use_custom_ranges else ""
@@ -6183,7 +6184,7 @@ OVERALL VERDICT
         if use_custom_ranges:
             fig.update_xaxes(range=[xmin, xmax])
             fig.update_yaxes(range=[ymin, ymax])
-        self._set_expert_plot_html(fig.to_html(include_plotlyjs=True, full_html=True), already_full_html=True)
+        self._set_expert_plot_html(fig.to_html(full_html=True, include_plotlyjs=True, config={"responsive": True}), already_full_html=True)
 
         if self.live_plot_status_label is not None:
             range_note = " with custom ranges" if use_custom_ranges else ""
