@@ -1,23 +1,6 @@
-cd C:\Users\shiraz\Documents\IndentAnalyzer
->> 
->> Remove-Item build -Recurse -Force -ErrorAction SilentlyContinue
->> Remove-Item dist -Recurse -Force -ErrorAction SilentlyContinue
->> Remove-Item IndentAnalyzer.spec -Force -ErrorAction SilentlyContinue
->> 
->> .\.venv\Scripts\pyinstaller.exe `
->>   --name IndentAnalyzer `
->>   --onedir `
->>   --windowed `
->>   --contents-directory "System Files" `
->>   --icon ".\src\logo\NanoInd.ico" `
->>   --paths "." `
->>   --paths ".\src" `
->>   --collect-all PyQt5 `
->>   --collect-all plotly `
->>   --add-data ".\src;src" `
->>   --add-data ".\config\analysis_settings.ini;config" `
->>   --add-data ".\src\fileloader;src\fileloader" `
->>   --hidden-import PyQt5.QtWebEngineWidgets `
->>   --hidden-import PyQt5.QtWebEngineCore `
->>   --hidden-import PyQt5.QtWebChannel `
->>   ".\src\gui\main_interface.py"
+# Desktop App Installation
+
+The old executable conversion notes have been replaced by the desktop app installation videos.
+
+- [How to Install IndentAnalyzer on macOS](https://www.youtube.com/watch?v=qToH14U3ovk)
+- [IndentAnalyzer Windows Installation Guide](https://www.youtube.com/watch?v=B07MHajiaPU)

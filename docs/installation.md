@@ -1,31 +1,26 @@
 # Installation
 
-This page gives the minimum setup to run IndentAnalyzer locally and verify the documentation build.
+Install IndentAnalyzer as a desktop application by following the video guide for your operating system.
 
-## 1) Clone and switch to development branch
+## macOS desktop app installation
 
-```bash
-git clone https://github.com/MShirazAhmad/IndentAnalyzer.git
-cd IndentAnalyzer
-git checkout indevelopment
-```
+Follow the instructions in **How to Install IndentAnalyzer on macOS**:
 
-## 2) Create a virtual environment
+<iframe width="100%" height="405" src="https://www.youtube.com/embed/qToH14U3ovk" title="How to Install IndentAnalyzer on macOS" frameborder="0" allowfullscreen></iframe>
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-```
+[Watch How to Install IndentAnalyzer on macOS on YouTube](https://www.youtube.com/watch?v=qToH14U3ovk)
 
-## 3) Launch the GUI
+## Windows desktop app installation
 
-```bash
-bash scripts/launch_application.sh
-```
+Follow the instructions in **IndentAnalyzer Windows Installation Guide**:
 
-The standard user flow is:
+<iframe width="100%" height="405" src="https://www.youtube.com/embed/B07MHajiaPU" title="IndentAnalyzer Windows Installation Guide" frameborder="0" allowfullscreen></iframe>
+
+[Watch IndentAnalyzer Windows Installation Guide on YouTube](https://www.youtube.com/watch?v=B07MHajiaPU)
+
+## After installation
+
+Open the IndentAnalyzer desktop app and follow the standard workflow:
 
 1. `1. Calibration`
 2. `2. Load File`
@@ -33,39 +28,8 @@ The standard user flow is:
 4. `4. Results`
 5. `5. Export`
 
-Then review details in right-panel tabs such as `Results Table`, `Reliability`, and `Curve Viewer`.
+See the [GUI Walkthrough](gui-walkthrough.md) for the full scientific workflow after the application is installed.
 
-See [GUI Walkthrough](gui-walkthrough.md) for the full scientific workflow.
+## Developer setup
 
-## 4) Build documentation locally (strict)
-
-```bash
-python -m pip install -r docs/requirements.txt
-mkdocs build --clean --strict
-```
-
-Optional live preview:
-
-```bash
-mkdocs serve
-```
-
-## Build a macOS installer package
-
-On macOS, create a clickable `.pkg` installer:
-
-```bash
-source .venv/bin/activate
-python -m pip install -r requirements.txt pyinstaller
-bash scripts/build_macos_installer.sh
-```
-
-The package is created at `dist/IndentAnalyzer-1.0.1-macOS.pkg`. Use `VERSION=1.2.3 bash scripts/build_macos_installer.sh` to set a release version.
-
-Unsigned or unnotarized builds may be blocked by Gatekeeper on first launch. The installer opens System Settings after installation and includes the approval path: **System Settings > Privacy & Security > Open Anyway**.
-
-## Common setup issues
-
-- **GUI fails to launch**: confirm `PyQt5` is installed from `requirements.txt` and run from an active virtual environment.
-- **File not loading**: confirm the file is an Agilent G200 `.xls`/`.xlsx` export with test sheets.
-- **Docs build failure**: run the strict build command above and resolve missing links/assets before publishing.
+These videos are the recommended installation path for desktop users. Maintainers who need to build or preview the documentation locally can use the commands on the [Publishing](readthedocs.md) page.
