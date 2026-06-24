@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
     QProgressBar, QTabWidget, QTableWidget, QTableWidgetItem, QCheckBox,
     QGroupBox, QSplitter, QMessageBox, QScrollArea, QSpinBox, QDoubleSpinBox,
     QComboBox, QFrame, QSizePolicy, QHeaderView, QAbstractItemView, QAction,
-    QDialog, QDialogButtonBox, QTabBar
+    QDialog, QDialogButtonBox, QTabBar, QFormLayout
 )
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, QSize, QUrl
 from PyQt5.QtGui import QFont, QPixmap, QIcon, QPalette, QColor, QPainter, QTextCursor
@@ -394,11 +394,25 @@ class MatplotlibWidget(QWidget):
         super().__init__(parent)
         self.logger = logging.getLogger('MatplotlibWidget')
         self.logger.debug("MatplotlibWidget initializing")
+        self.plot_axis_limits: Dict[str, Optional[float]] = {
+            "xmin": None,
+            "xmax": None,
+            "ymin": None,
+            "ymax": None,
+        }
+        self.plot_figure_size: Optional[Tuple[float, float]] = None
+        self.plot_axes_aspect: Optional[str] = None
+        self._applying_plot_settings = False
         
         # Create matplotlib figure and canvas with a light background
         self.figure = Figure(figsize=(12, 8), dpi=100, facecolor='#ffffff')
         self.canvas = FigureCanvas(self.figure)
+        self._canvas_draw = self.canvas.draw
+        self.canvas.draw = self._draw_with_plot_settings
         self.toolbar = NavigationToolbar(self.canvas, self)
+        self.plot_settings_action = self.toolbar.addAction("Plot Settings")
+        self.plot_settings_action.setToolTip("Set manual axis limits and figure aspect ratio for this result plot.")
+        self.plot_settings_action.triggered.connect(self.open_plot_settings_dialog)
         self._apply_light_toolbar_style()
         
         self.canvas.setStyleSheet("background-color: #ffffff;")
@@ -413,6 +427,157 @@ class MatplotlibWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         self.logger.debug("MatplotlibWidget initialized successfully")
+
+    def _draw_with_plot_settings(self, *args, **kwargs):
+        self.apply_plot_settings()
+        return self._canvas_draw(*args, **kwargs)
+
+    def apply_plot_settings(self):
+        """Apply persistent user plot settings to all current axes before drawing."""
+        if self._applying_plot_settings:
+            return
+        axes = list(self.figure.axes)
+        if not axes:
+            return
+        self._applying_plot_settings = True
+        try:
+            if self.plot_figure_size is not None:
+                width, height = self.plot_figure_size
+                if width > 0 and height > 0:
+                    self.figure.set_size_inches(width, height, forward=False)
+
+            limits = self.plot_axis_limits
+            x_has_override = limits.get("xmin") is not None or limits.get("xmax") is not None
+            y_has_override = limits.get("ymin") is not None or limits.get("ymax") is not None
+            for ax in axes:
+                if x_has_override:
+                    current_xmin, current_xmax = ax.get_xlim()
+                    xmin = limits["xmin"] if limits["xmin"] is not None else current_xmin
+                    xmax = limits["xmax"] if limits["xmax"] is not None else current_xmax
+                    if np.isfinite(xmin) and np.isfinite(xmax) and float(xmax) > float(xmin):
+                        ax.set_xlim(float(xmin), float(xmax))
+                if y_has_override:
+                    current_ymin, current_ymax = ax.get_ylim()
+                    ymin = limits["ymin"] if limits["ymin"] is not None else current_ymin
+                    ymax = limits["ymax"] if limits["ymax"] is not None else current_ymax
+                    if np.isfinite(ymin) and np.isfinite(ymax) and float(ymax) > float(ymin):
+                        ax.set_ylim(float(ymin), float(ymax))
+                if self.plot_axes_aspect:
+                    ax.set_aspect(self.plot_axes_aspect, adjustable="box")
+        finally:
+            self._applying_plot_settings = False
+
+    def open_plot_settings_dialog(self):
+        """Open per-plot controls for limits and aspect ratio."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Configure Plot")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+
+        axes = list(self.figure.axes)
+        if axes:
+            xlim = axes[0].get_xlim()
+            ylim = axes[0].get_ylim()
+        else:
+            xlim = (0.0, 1.0)
+            ylim = (0.0, 1.0)
+        fig_w, fig_h = self.plot_figure_size or tuple(float(v) for v in self.figure.get_size_inches())
+
+        limit_widgets: Dict[str, Tuple[QCheckBox, QDoubleSpinBox]] = {}
+
+        def add_limit_row(key: str, label: str, current_value: float):
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(6)
+            checkbox = QCheckBox("manual")
+            checkbox.setChecked(self.plot_axis_limits.get(key) is not None)
+            spin = QDoubleSpinBox()
+            spin.setRange(-1e12, 1e12)
+            spin.setDecimals(6)
+            spin.setSingleStep(1.0)
+            spin.setValue(float(self.plot_axis_limits.get(key) if self.plot_axis_limits.get(key) is not None else current_value))
+            spin.setEnabled(checkbox.isChecked())
+            checkbox.toggled.connect(spin.setEnabled)
+            row_layout.addWidget(checkbox)
+            row_layout.addWidget(spin, 1)
+            form.addRow(label, row)
+            limit_widgets[key] = (checkbox, spin)
+
+        add_limit_row("xmin", "X min:", xlim[0])
+        add_limit_row("xmax", "X max:", xlim[1])
+        add_limit_row("ymin", "Y min:", ylim[0])
+        add_limit_row("ymax", "Y max:", ylim[1])
+
+        size_row = QWidget()
+        size_layout = QHBoxLayout(size_row)
+        size_layout.setContentsMargins(0, 0, 0, 0)
+        size_layout.setSpacing(6)
+        size_check = QCheckBox("manual")
+        size_check.setChecked(self.plot_figure_size is not None)
+        width_spin = QDoubleSpinBox()
+        width_spin.setRange(1.0, 80.0)
+        width_spin.setDecimals(2)
+        width_spin.setSingleStep(0.5)
+        width_spin.setSuffix(" in")
+        width_spin.setValue(float(fig_w))
+        height_spin = QDoubleSpinBox()
+        height_spin.setRange(1.0, 80.0)
+        height_spin.setDecimals(2)
+        height_spin.setSingleStep(0.5)
+        height_spin.setSuffix(" in")
+        height_spin.setValue(float(fig_h))
+        width_spin.setEnabled(size_check.isChecked())
+        height_spin.setEnabled(size_check.isChecked())
+        size_check.toggled.connect(width_spin.setEnabled)
+        size_check.toggled.connect(height_spin.setEnabled)
+        size_layout.addWidget(size_check)
+        size_layout.addWidget(QLabel("W"))
+        size_layout.addWidget(width_spin)
+        size_layout.addWidget(QLabel("H"))
+        size_layout.addWidget(height_spin)
+        form.addRow("Image aspect ratio:", size_row)
+
+        axes_aspect_combo = QComboBox()
+        axes_aspect_combo.addItems(["Auto", "Equal"])
+        axes_aspect_combo.setCurrentText("Equal" if self.plot_axes_aspect == "equal" else "Auto")
+        axes_aspect_combo.setToolTip("Auto preserves normal plot scaling; Equal makes one x unit equal one y unit.")
+        form.addRow("Axis aspect:", axes_aspect_combo)
+
+        layout.addLayout(form)
+        note = QLabel("Manual limits apply to every subplot in this result view and persist when the plot redraws.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#5e6a72;")
+        layout.addWidget(note)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Reset | QDialogButtonBox.Close)
+        layout.addWidget(buttons)
+
+        def apply_settings():
+            for key, (checkbox, spin) in limit_widgets.items():
+                self.plot_axis_limits[key] = float(spin.value()) if checkbox.isChecked() else None
+            if size_check.isChecked():
+                self.plot_figure_size = (float(width_spin.value()), float(height_spin.value()))
+            else:
+                self.plot_figure_size = None
+            self.plot_axes_aspect = "equal" if axes_aspect_combo.currentText() == "Equal" else None
+            self.canvas.draw()
+
+        def reset_settings():
+            self.plot_axis_limits = {"xmin": None, "xmax": None, "ymin": None, "ymax": None}
+            self.plot_figure_size = None
+            self.plot_axes_aspect = None
+            for key, (checkbox, spin) in limit_widgets.items():
+                checkbox.setChecked(False)
+            size_check.setChecked(False)
+            axes_aspect_combo.setCurrentText("Auto")
+            self.canvas.draw()
+
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(apply_settings)
+        buttons.button(QDialogButtonBox.Reset).clicked.connect(reset_settings)
+        buttons.rejected.connect(dialog.reject)
+        buttons.button(QDialogButtonBox.Close).clicked.connect(dialog.accept)
+        dialog.exec_()
 
     def _apply_light_toolbar_style(self):
         """Keep Matplotlib toolbar controls readable on the light application theme."""
@@ -882,6 +1047,7 @@ class NanoindentationGUI(QMainWindow):
         self.results_summary_label: Optional[QLabel] = None
         self.results_view_help_label: Optional[QLabel] = None
         self.reliability_widget: Optional[MatplotlibWidget] = None
+        self.op_overlay_widget: Optional[MatplotlibWidget] = None
         self.summary_statistics_text: Optional[QTextEdit] = None
         self.single_test_plot: Optional[MatplotlibWidget] = None
         self.current_test_index: int = 0
@@ -897,6 +1063,7 @@ class NanoindentationGUI(QMainWindow):
         self.step4_plot_buttons_note: Optional[QLabel] = None
         self.step4_plot_buttons_group: Optional[QGroupBox] = None
         self.step4_plot_buttons: Dict[int, QPushButton] = {}
+        self.generate_curves_button: Optional[QPushButton] = None
         self.nist_calibrator = NISTCalibrationMethods() if NISTCalibrationMethods else None
         self.calibration_source = "Default Berkovich"
         self.calibration_file_path: Optional[str] = None
@@ -908,6 +1075,16 @@ class NanoindentationGUI(QMainWindow):
         self.sample_poisson_spinbox: Optional[QDoubleSpinBox] = None
         self.indenter_combo: Optional[QComboBox] = None
         self.fitting_method_combo: Optional[QComboBox] = None
+        self.op_overlay_hold_combo: Optional[QComboBox] = None
+        self.op_overlay_cutoff_label: Optional[QLabel] = None
+        self.op_overlay_cutoff_spin: Optional[QDoubleSpinBox] = None
+        self.op_overlay_cutoff_user_set: bool = False
+        self.op_overlay_cutoff_syncing: bool = False
+        self.op_overlay_refresh_timer: Optional[QTimer] = QTimer(self)
+        self.op_overlay_refresh_timer.setSingleShot(True)
+        self.op_overlay_refresh_timer.timeout.connect(self._refresh_op_overlay_options_now)
+        self.overlay_curve_cache: Dict[Tuple[str, int], Tuple[List[float], List[float], List[float], List[float]]] = {}
+        self.overlay_sheet_names_cache: Dict[str, List[str]] = {}
         self.file_loader_combo: Optional[QComboBox] = None
         self.file_loader_menu = None
         self.file_loader_actions: Dict[str, QAction] = {}
@@ -938,6 +1115,7 @@ class NanoindentationGUI(QMainWindow):
         self.csm_table: Optional[QTableWidget] = None
         self.csm_depth_plot_widget: Optional[MatplotlibWidget] = None
         self.csm_offset_plot_widget: Optional[MatplotlibWidget] = None
+        self.csm_plot_mode_combo: Optional[QComboBox] = None
         self.workflow_log_widget: Optional[QTextEdit] = None
         self.workflow_log_last_length: int = 0
         self.last_run_context: str = "analysis"
@@ -1386,6 +1564,12 @@ class NanoindentationGUI(QMainWindow):
                 ("Fitting method selected", self.fitting_method_combo is not None)
             ])
         else:
+            plot_average = self._selected_csm_plot_mode() == "average"
+            use_error_bars = (
+                plot_average
+                and getattr(self, "csm_sd_display_combo", None) is not None
+                and self.csm_sd_display_combo.currentText() == "SD error bars"
+            )
             has_valid_csm_target_range = (
                 self.csm_target_x_start_spin is not None
                 and self.csm_target_x_end_spin is not None
@@ -1396,8 +1580,9 @@ class NanoindentationGUI(QMainWindow):
             checks.extend([
                 ("CSM tests selected in Open Test Plot", bool(selected_step4_tests)),
                 ("CSM depth window set", getattr(self, "csm_depth_min_spin", None) is not None and getattr(self, "csm_depth_max_spin", None) is not None),
-                ("CSM error-bar placement set", has_valid_csm_target_range),
             ])
+            if use_error_bars:
+                checks.append(("CSM error-bar placement set", has_valid_csm_target_range))
         lines = ["Before running analysis, confirm these items:"]
         for label, ok in checks:
             lines.append(f"{'✅' if ok else '⬜'} {label}")
@@ -1415,24 +1600,40 @@ class NanoindentationGUI(QMainWindow):
             lines.append(f"Fitting method: {self.fitting_method_combo.currentText()}")
         if analysis_type == "Oliver-Pharr" and self.fit_curve_percent_spinbox:
             lines.append(f"Fit curve percentage used (loading/unloading): {self.fit_curve_percent_spinbox.value():.1f}%")
+        if analysis_type == "Oliver-Pharr" and getattr(self, "op_overlay_hold_combo", None):
+            lines.append(f"Load Overlay hold segment: {self.op_overlay_hold_combo.currentText()}")
+            if self._op_overlay_remove_hold_segment() and getattr(self, "op_overlay_cutoff_spin", None):
+                lines.append(f"Load Overlay cutoff: {self.op_overlay_cutoff_spin.value():.3f} mN")
         if analysis_type == "CSM":
             if selected_step4_tests:
                 lines.append(f"CSM selected tests: {self._format_test_range(selected_step4_tests)}")
             else:
                 lines.append("CSM selected tests: none")
             lines.append(f"CSM source: {self.csm_source_combo.currentText()}")
-            if getattr(self, "csm_sd_display_combo", None):
-                lines.append(f"CSM SD display: {self.csm_sd_display_combo.currentText()}")
+            if getattr(self, "csm_plot_mode_combo", None):
+                lines.append(f"CSM plot layout: {self.csm_plot_mode_combo.currentText()}")
+            plot_average = self._selected_csm_plot_mode() == "average"
+            use_error_bars = (
+                plot_average
+                and getattr(self, "csm_sd_display_combo", None) is not None
+                and self.csm_sd_display_combo.currentText() == "SD error bars"
+            )
+            if plot_average and getattr(self, "csm_sd_display_combo", None):
+                lines.append(f"CSM spread display: {self.csm_sd_display_combo.currentText()}")
             lines.append(
                 f"CSM depth window: {self.csm_depth_min_spin.value():.1f}–"
                 f"{self.csm_depth_max_spin.value():.1f} nm"
             )
-            if self.csm_target_x_start_spin and self.csm_target_x_end_spin and self.csm_target_x_step_spin:
+            if (
+                use_error_bars
+                and self.csm_target_x_start_spin
+                and self.csm_target_x_end_spin
+                and self.csm_target_x_step_spin
+            ):
                 lines.append(
                     f"CSM error-bar placement: ({self.csm_target_x_start_spin.value():.1f}, "
                     f"{self.csm_target_x_end_spin.value():.1f}, "
                     f"{self.csm_target_x_step_spin.value():.1f}) "
-                    f"[discrete mode only]"
                 )
             lines.append("CSM offsets: from Curve Viewer loading h0 values")
 
@@ -1456,7 +1657,7 @@ class NanoindentationGUI(QMainWindow):
         if getattr(self, "analyze_button", None):
             self.analyze_button.setText("Regenerate CSM Profiles" if is_csm else "Regenerate Oliver-Pharr Results")
         if getattr(self, "step4_plot_buttons_note", None):
-            self.step4_plot_buttons_note.setText("Browse a file to auto-generate loading curves and populate test buttons.")
+            self.step4_plot_buttons_note.setText("Browse a file, then click Generate Test Curves to populate review buttons.")
         # Keep Open Test Plot visible in both modes because CSM now uses this selection.
         if getattr(self, "step4_plot_buttons_group", None):
             self.step4_plot_buttons_group.setVisible(True)
@@ -1682,7 +1883,7 @@ OVERALL VERDICT
             visible_titles = (
                 {"CSM Depth Profiles", "CSM Averaged Data"}
                 if mode == "CSM"
-                else {"Reliability", "Summary Statistics", "Curve Viewer", "Results Table"}
+                else {"Reliability", "Load Overlay", "Summary Statistics", "Curve Viewer", "Results Table"}
             )
 
         all_titles = [
@@ -1690,6 +1891,7 @@ OVERALL VERDICT
             "Calibration Metrics",
             "Results Table",
             "Reliability",
+            "Load Overlay",
             "Summary Statistics",
             "Curve Viewer",
             "Log",
@@ -1706,7 +1908,7 @@ OVERALL VERDICT
                 self.results_panel_tabs.setCurrentIndex(idx)
             return
 
-        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Reliability", "Summary Statistics", "Curve Viewer", "CSM Averaged Data", "Results Table"):
+        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Reliability", "Load Overlay", "Summary Statistics", "Curve Viewer", "CSM Averaged Data", "Results Table"):
             if preferred not in visible_titles:
                 continue
             idx = self._results_tab_index(preferred)
@@ -2346,7 +2548,7 @@ OVERALL VERDICT
         step2_layout.addWidget(self.create_guided_text(
             "Step 2 of 5 — Research Context and File",
             "Name the sample, choose the goal that best matches this run, then browse for "
-            "the exported XLS/XLSX file. Loading curves are generated automatically so you "
+            "the exported XLS/XLSX file. Click Generate Test Curves when you are ready so you "
             "can inspect each test and decide what belongs in the final calculation. For "
             "free-form X/Y inspection, use the Expert Mode tab."
         ))
@@ -2376,6 +2578,14 @@ OVERALL VERDICT
         self.reload_button.clicked.connect(self.reload_file)
         self.reload_button.setEnabled(False)
         file_button_layout.addWidget(self.reload_button)
+        self.generate_curves_button = QPushButton("Generate Test Curves")
+        self.generate_curves_button.setProperty("primary", True)
+        self.generate_curves_button.setEnabled(False)
+        self.generate_curves_button.setToolTip(
+            "Generate loading/unloading curves and h0 offsets for test selection."
+        )
+        self.generate_curves_button.clicked.connect(self.generate_loading_curves_for_selection)
+        file_button_layout.addWidget(self.generate_curves_button)
         step2_layout.addLayout(file_button_layout)
 
         self.workflow_tabs.addTab(step2, "2. Load File")
@@ -2437,6 +2647,32 @@ OVERALL VERDICT
         self.fitting_method_combo.setCurrentText(default_method if default_method in ["oliver_pharr", "power_law", "auto"] else "oliver_pharr")
         self.fitting_method_combo.currentIndexChanged.connect(self.update_readiness_summary)
         settings_layout.addWidget(self.fitting_method_combo, 5, 1)
+        settings_layout.addWidget(QLabel("Load Overlay hold segment:"), 6, 0)
+        self.op_overlay_hold_combo = QComboBox()
+        self.op_overlay_hold_combo.addItems([
+            "Remove hold segment",
+            "Keep hold segment",
+        ])
+        self.op_overlay_hold_combo.setToolTip(
+            "Choose whether peak hold-time shelves are hidden or retained in the Oliver-Pharr Load Overlay tab."
+        )
+        self.op_overlay_hold_combo.currentIndexChanged.connect(self._sync_op_overlay_hold_controls)
+        settings_layout.addWidget(self.op_overlay_hold_combo, 6, 1)
+        self.op_overlay_cutoff_label = QLabel("Load cutoff value (mN):")
+        self.op_overlay_cutoff_label.setToolTip(
+            "Used when removing the hold segment. Defaults to the lowest peak load among included overlay curves."
+        )
+        settings_layout.addWidget(self.op_overlay_cutoff_label, 7, 0)
+        self.op_overlay_cutoff_spin = QDoubleSpinBox()
+        self.op_overlay_cutoff_spin.setRange(0.0, 1e9)
+        self.op_overlay_cutoff_spin.setDecimals(3)
+        self.op_overlay_cutoff_spin.setSingleStep(1.0)
+        self.op_overlay_cutoff_spin.setToolTip(
+            "Curves in Load Overlay are trimmed at this load when hold segments are removed."
+        )
+        self.op_overlay_cutoff_spin.valueChanged.connect(self._op_overlay_cutoff_changed)
+        self.op_overlay_cutoff_spin.editingFinished.connect(self._op_overlay_cutoff_changed)
+        settings_layout.addWidget(self.op_overlay_cutoff_spin, 7, 1)
         step3_layout.addWidget(settings_group)
 
         self.csm_settings_group = QGroupBox("CSM Settings")
@@ -2444,50 +2680,78 @@ OVERALL VERDICT
         csm_settings_layout.setVerticalSpacing(8)
         csm_settings_layout.setHorizontalSpacing(10)
         csm_settings_layout.setColumnStretch(1, 1)
-        csm_settings_layout.addWidget(QLabel("Data source:"), 1, 0)
+        csm_settings_layout.addWidget(QLabel("CSM values:"), 1, 0)
         self.csm_source_combo = QComboBox()
         self.csm_source_combo.addItems([
-            "Exported hardness/modulus",
-            "Recalculate from stiffness + shared calibration"
+            "Use exported H/Er",
+            "Recalculate H/Er"
         ])
+        self.csm_source_combo.setToolTip(
+            "Use H/Er values already exported by the instrument, or recalculate them "
+            "from CSM stiffness using the active tip calibration."
+        )
         self.csm_source_combo.currentIndexChanged.connect(self.update_readiness_summary)
         csm_settings_layout.addWidget(self.csm_source_combo, 1, 1)
 
-        csm_settings_layout.addWidget(QLabel("SD display mode:"), 2, 0)
+        self.csm_sd_display_label = QLabel("Spread display:")
+        csm_settings_layout.addWidget(self.csm_sd_display_label, 2, 0)
         self.csm_sd_display_combo = QComboBox()
         self.csm_sd_display_combo.addItems([
-            "Continuous band",
-            "Discrete error bars",
+            "SD band",
+            "SD error bars",
         ])
-        self.csm_sd_display_combo.currentIndexChanged.connect(self.update_readiness_summary)
+        self.csm_sd_display_combo.setToolTip(
+            "Controls how standard deviation is drawn for the averaged CSM profile."
+        )
+        self.csm_sd_display_combo.currentIndexChanged.connect(self._sync_csm_settings_visibility)
         csm_settings_layout.addWidget(self.csm_sd_display_combo, 2, 1)
+
+        csm_settings_layout.addWidget(QLabel("Plot content:"), 3, 0)
+        self.csm_plot_mode_combo = QComboBox()
+        self.csm_plot_mode_combo.addItems([
+            "Average profile",
+            "Individual profiles",
+        ])
+        self.csm_plot_mode_combo.setToolTip(
+            "Choose whether the CSM Depth Profiles tab shows the averaged profile "
+            "or overlays every selected test profile with mean and SD annotations."
+        )
+        self.csm_plot_mode_combo.currentIndexChanged.connect(self._sync_csm_settings_visibility)
+        csm_settings_layout.addWidget(self.csm_plot_mode_combo, 3, 1)
+
+        self.csm_plot_mode_help_label = QLabel(
+            "Average profile summarizes selected tests; Individual profiles overlays each selected test."
+        )
+        self.csm_plot_mode_help_label.setWordWrap(True)
+        self.csm_plot_mode_help_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}px;")
+        csm_settings_layout.addWidget(self.csm_plot_mode_help_label, 4, 0, 1, 2)
 
         depth_min_label = QLabel("Plot/result depth min (nm):")
         depth_min_label.setToolTip("Lower bound of corrected depth values kept in the CSM averaged result and depth-profile plot.")
-        csm_settings_layout.addWidget(depth_min_label, 3, 0)
+        csm_settings_layout.addWidget(depth_min_label, 5, 0)
         self.csm_depth_min_spin = QDoubleSpinBox()
         self.csm_depth_min_spin.setRange(-100000, 100000)
         self.csm_depth_min_spin.setValue(100.0)
         self.csm_depth_min_spin.setToolTip("Rows shallower than this corrected depth are excluded from the final CSM average/plot.")
-        csm_settings_layout.addWidget(self.csm_depth_min_spin, 3, 1)
+        csm_settings_layout.addWidget(self.csm_depth_min_spin, 5, 1)
 
         depth_max_label = QLabel("Plot/result depth max (nm):")
         depth_max_label.setToolTip("Upper bound of corrected depth values kept in the CSM averaged result and depth-profile plot.")
-        csm_settings_layout.addWidget(depth_max_label, 4, 0)
+        csm_settings_layout.addWidget(depth_max_label, 6, 0)
         self.csm_depth_max_spin = QDoubleSpinBox()
         self.csm_depth_max_spin.setRange(-100000, 100000)
         self.csm_depth_max_spin.setValue(2000.0)
         self.csm_depth_max_spin.setToolTip("Rows deeper than this corrected depth are excluded from the final CSM average/plot.")
-        csm_settings_layout.addWidget(self.csm_depth_max_spin, 4, 1)
+        csm_settings_layout.addWidget(self.csm_depth_max_spin, 6, 1)
 
-        target_x_label = QLabel("Error-bar placement (start,end,step nm):")
-        target_x_label.setToolTip(
+        self.csm_target_x_label = QLabel("Error-bar depths (start,end,step nm):")
+        self.csm_target_x_label.setToolTip(
             "Used only for discrete SD error-bar placement.\n"
             "Example (100, 200, 50) places bars at 100, 150, 200 nm."
         )
-        csm_settings_layout.addWidget(target_x_label, 5, 0)
-        target_x_container = QWidget()
-        target_x_layout = QHBoxLayout(target_x_container)
+        csm_settings_layout.addWidget(self.csm_target_x_label, 7, 0)
+        self.csm_target_x_container = QWidget()
+        target_x_layout = QHBoxLayout(self.csm_target_x_container)
         target_x_layout.setContentsMargins(0, 0, 0, 0)
         target_x_layout.setSpacing(6)
         self.csm_target_x_start_spin = QDoubleSpinBox()
@@ -2511,26 +2775,26 @@ OVERALL VERDICT
         self.csm_target_x_step_spin.setToolTip("Discrete error-bar interval (nm).")
         self.csm_target_x_step_spin.valueChanged.connect(self.update_readiness_summary)
         target_x_layout.addWidget(self.csm_target_x_step_spin)
-        csm_settings_layout.addWidget(target_x_container, 5, 1)
+        csm_settings_layout.addWidget(self.csm_target_x_container, 7, 1)
 
         self.csm_apply_offsets_cb = QCheckBox("Apply Expert Mode h0 offsets")
         self.csm_apply_offsets_cb.setToolTip(
             "Use the current h0 offsets shown in Expert Mode, including any edited values."
         )
         self.csm_apply_offsets_cb.setChecked(True)
-        csm_settings_layout.addWidget(self.csm_apply_offsets_cb, 6, 0, 1, 2)
+        csm_settings_layout.addWidget(self.csm_apply_offsets_cb, 8, 0, 1, 2)
 
         self.csm_compute_offsets_button = QPushButton("Sync Current h0 Offsets")
         self.csm_compute_offsets_button.setToolTip(
             "Synchronize offsets from the current result records without discarding Expert Mode edits."
         )
         self.csm_compute_offsets_button.clicked.connect(self.compute_csm_offsets)
-        csm_settings_layout.addWidget(self.csm_compute_offsets_button, 7, 0, 1, 2)
+        csm_settings_layout.addWidget(self.csm_compute_offsets_button, 9, 0, 1, 2)
 
         self.csm_status_text = QTextEdit()
         self.csm_status_text.setReadOnly(True)
         self.csm_status_text.setFixedHeight(self.sp(92))
-        csm_settings_layout.addWidget(self.csm_status_text, 8, 0, 1, 2)
+        csm_settings_layout.addWidget(self.csm_status_text, 10, 0, 1, 2)
         step3_layout.addWidget(self.csm_settings_group)
 
         # ── Proceed options after settings ────────────────────────────────
@@ -2604,7 +2868,7 @@ OVERALL VERDICT
         step4_layout.addWidget(self.readiness_text)
         self.analyze_button = QPushButton("Run Analysis")
         self.analyze_button.setProperty("primary", True)
-        self.analyze_button.clicked.connect(self.start_analysis)
+        self.analyze_button.clicked.connect(lambda _checked=False: self.start_analysis(False))
         self.analyze_button.setEnabled(False)
         step4_layout.addWidget(self.analyze_button)
         self.cancel_button = QPushButton("Cancel Analysis")
@@ -2694,6 +2958,8 @@ OVERALL VERDICT
         self.workflow_tabs.setCurrentIndex(0)
         self.workflow_tabs.currentChanged.connect(self._on_workflow_step_changed)
         self.update_analysis_type_options()
+        self._sync_op_overlay_hold_controls()
+        self._sync_csm_settings_visibility()
         self.update_readiness_summary()
 
         layout.addWidget(self.workflow_tabs)
@@ -2738,6 +3004,9 @@ OVERALL VERDICT
         # ── Tab 2: Reliability summary (populated after analysis) ─────────
         self.reliability_widget = MatplotlibWidget()
         tab_widget.addTab(self.reliability_widget, "Reliability")
+
+        self.op_overlay_widget = MatplotlibWidget()
+        tab_widget.addTab(self.op_overlay_widget, "Load Overlay")
 
         self.summary_statistics_text = QTextEdit()
         self.summary_statistics_text.setReadOnly(True)
@@ -2863,6 +3132,7 @@ OVERALL VERDICT
         controls_layout.setSpacing(self.sp(6))
         view_tooltips = {
             "Reliability": "Overview of fit quality and property distributions across all included tests.",
+            "Load Overlay": "Overlay of included Oliver-Pharr loading and unloading curves with mean values.",
             "Curve Viewer": "Inspect one load-displacement curve at a time, then include or exclude tests.",
             "Results Table": "Tabular accepted-test results currently used for final calculations.",
             "CSM Depth Profiles": "Averaged CSM hardness/modulus profiles versus corrected depth.",
@@ -2873,7 +3143,7 @@ OVERALL VERDICT
             "Calibration Metrics": "Numeric calibration quality assessment and overall verdict.",
             "Summary Statistics": "Numeric final statistics for included tests.",
         }
-        for title in ("Calibration", "Calibration Metrics", "Reliability", "Summary Statistics", "Curve Viewer", "Results Table", "CSM Depth Profiles", "CSM Averaged Data", "Expert Plot", "Log"):
+        for title in ("Calibration", "Calibration Metrics", "Reliability", "Load Overlay", "Summary Statistics", "Curve Viewer", "Results Table", "CSM Depth Profiles", "CSM Averaged Data", "Expert Plot", "Log"):
             btn = QPushButton(title)
             btn.setCheckable(True)
             btn.setProperty("viewSwitch", True)
@@ -2918,6 +3188,10 @@ OVERALL VERDICT
             "Reliability": (
                 "Reliability shows the whole batch: fit quality, accepted-test distributions, "
                 "and whether any tests look inconsistent before final averages are trusted."
+            ),
+            "Load Overlay": (
+                "Load Overlay draws all included Oliver-Pharr load-displacement curves together "
+                "and annotates the mean hardness and modulus."
             ),
             "Curve Viewer": (
                 "Curve Viewer is for test-by-test review. Use Prev/Next or the test buttons on the left, "
@@ -3244,6 +3518,10 @@ OVERALL VERDICT
                 self._render_test_plot(self.single_test_plot, result)
                 self._update_test_nav_label()
             break
+
+        included_results = self.get_included_results() if self.current_results else []
+        if included_results and self.op_overlay_widget is not None:
+            self.create_load_overlay_plot_tab(included_results)
 
         self.update_results_summary_strip()
 
@@ -3771,6 +4049,7 @@ OVERALL VERDICT
                 recalculate=recalculate,
             )
             results["error_bar_range"] = error_bar_range
+            results["depth_range"] = depth_range
             self.progress_bar.setValue(80)
             averaged = results["averaged"]
             if averaged.empty:
@@ -3827,17 +4106,70 @@ OVERALL VERDICT
                 self.csm_table.setItem(row_idx, col_idx, QTableWidgetItem(text))
         self.csm_table.resizeColumnsToContents()
 
+    def _refresh_csm_plot_mode(self, *_args):
+        self.update_readiness_summary()
+        if not self.csm_results:
+            return
+        averaged = self.csm_results.get("averaged")
+        source = self.csm_results.get("source", "instrument_exported")
+        if isinstance(averaged, pd.DataFrame) and not averaged.empty:
+            self._plot_csm_depth_profiles(averaged, str(source))
+
+    def _selected_csm_plot_mode(self) -> str:
+        if getattr(self, "csm_plot_mode_combo", None) is None:
+            return "average"
+        return "separate" if self.csm_plot_mode_combo.currentIndex() == 1 else "average"
+
+    def _sync_csm_settings_visibility(self, *_args):
+        plot_average = self._selected_csm_plot_mode() == "average"
+        discrete_error_bars = (
+            getattr(self, "csm_sd_display_combo", None) is not None
+            and self.csm_sd_display_combo.currentText() == "SD error bars"
+        )
+        show_error_bar_depths = plot_average and discrete_error_bars
+
+        for widget in (
+            getattr(self, "csm_sd_display_label", None),
+            getattr(self, "csm_sd_display_combo", None),
+        ):
+            if widget is not None:
+                widget.setVisible(plot_average)
+
+        for widget in (
+            getattr(self, "csm_target_x_label", None),
+            getattr(self, "csm_target_x_container", None),
+        ):
+            if widget is not None:
+                widget.setVisible(show_error_bar_depths)
+
+        if getattr(self, "csm_plot_mode_help_label", None) is not None:
+            if plot_average:
+                self.csm_plot_mode_help_label.setText(
+                    "Average profile summarizes selected tests; choose SD band or SD error bars for spread."
+                )
+            else:
+                self.csm_plot_mode_help_label.setText(
+                    "Individual profiles overlays each selected test; spread controls are hidden."
+                )
+
+        self._refresh_csm_plot_mode()
+
     def _plot_csm_depth_profiles(self, averaged: pd.DataFrame, source: str):
         if not self.csm_depth_plot_widget:
             return
         fig = self.csm_depth_plot_widget.figure
         fig.clear()
+        if self._selected_csm_plot_mode() == "separate":
+            self._plot_csm_individual_depth_profiles(fig, source)
+            self.csm_depth_plot_widget.canvas.draw()
+            return
+
         ax_h = fig.add_subplot(2, 1, 1)
         ax_m = fig.add_subplot(2, 1, 2, sharex=ax_h)
         x = averaged["Depth (nm)"]
         use_error_bars = (
             getattr(self, "csm_sd_display_combo", None) is not None
-            and self.csm_sd_display_combo.currentText() == "Discrete error bars"
+            and self.csm_sd_display_combo.currentText() == "SD error bars"
         )
         err_start = float(self.csm_target_x_start_spin.value()) if self.csm_target_x_start_spin else float(np.nanmin(x))
         err_end = float(self.csm_target_x_end_spin.value()) if self.csm_target_x_end_spin else float(np.nanmax(x))
@@ -3903,6 +4235,148 @@ OVERALL VERDICT
             ax.legend(loc="best")
         fig.tight_layout()
         self.csm_depth_plot_widget.canvas.draw()
+
+    def _plot_csm_individual_depth_profiles(self, fig: Figure, source: str):
+        results = self.csm_results or {}
+        raw = results.get("raw")
+        if not isinstance(raw, pd.DataFrame) or raw.empty:
+            ax = fig.add_subplot(111)
+            ax.axis("off")
+            ax.text(
+                0.5, 0.5,
+                "No per-test CSM data available.",
+                ha="center", va="center", transform=ax.transAxes,
+                color="#24313a", fontsize=12,
+            )
+            return
+
+        required = {"Test", "Depth (nm)"}
+        if not required.issubset(raw.columns):
+            ax = fig.add_subplot(111)
+            ax.axis("off")
+            ax.text(
+                0.5, 0.5,
+                "Per-test CSM plot needs Test and Depth columns.",
+                ha="center", va="center", transform=ax.transAxes,
+                color="#24313a", fontsize=12,
+            )
+            return
+
+        depth_range = results.get("depth_range")
+        depth_min = depth_max = None
+        if isinstance(depth_range, (tuple, list)) and len(depth_range) == 2:
+            depth_min, depth_max = float(depth_range[0]), float(depth_range[1])
+
+        working = raw.copy()
+        working["Test"] = pd.to_numeric(working["Test"], errors="coerce")
+        working["Depth (nm)"] = pd.to_numeric(working["Depth (nm)"], errors="coerce")
+        if depth_min is not None and depth_max is not None:
+            working = working[working["Depth (nm)"].between(depth_min, depth_max, inclusive="both")]
+        working = working.replace([np.inf, -np.inf], np.nan)
+
+        requested_tests = results.get("test_numbers") or []
+        if requested_tests:
+            test_numbers = [int(test) for test in requested_tests if pd.notna(test)]
+        else:
+            test_numbers = sorted(
+                int(test) for test in working["Test"].dropna().unique()
+            )
+        test_numbers = [
+            test for test in test_numbers
+            if not working[working["Test"] == test].dropna(how="all").empty
+        ]
+        if not test_numbers:
+            ax = fig.add_subplot(111)
+            ax.axis("off")
+            ax.text(
+                0.5, 0.5,
+                "No CSM rows remain in the selected depth window.",
+                ha="center", va="center", transform=ax.transAxes,
+                color="#24313a", fontsize=12,
+            )
+            return
+
+        ax_h = fig.add_subplot(2, 1, 1)
+        ax_m = fig.add_subplot(2, 1, 2, sharex=ax_h)
+        fig.suptitle(
+            f"CSM Individual Test Profiles ({source.replace('_', ' ')})",
+            fontsize=12, fontweight="bold", color="#24313a",
+        )
+
+        colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+        if not colors:
+            colors = ["#00a8cc", "#ffbe0b", "#2ecc71", "#e74c3c", "#9b59b6"]
+
+        for ax in (ax_h, ax_m):
+            ax.set_facecolor("#ffffff")
+            for spine in ax.spines.values():
+                spine.set_edgecolor("#d6dbe0")
+            ax.tick_params(colors="#5e6a72", labelsize=8)
+            ax.grid(True, alpha=0.25, linestyle=":", color="#d6dbe0")
+
+        hardness_means = []
+        modulus_means = []
+
+        for plot_idx, test_number in enumerate(test_numbers):
+            test_df = working[working["Test"] == test_number].sort_values("Depth (nm)")
+            x = pd.to_numeric(test_df["Depth (nm)"], errors="coerce")
+            color = colors[plot_idx % len(colors)]
+
+            if "Hardness (GPa)" in test_df:
+                hardness = pd.to_numeric(test_df["Hardness (GPa)"], errors="coerce")
+                valid = x.notna() & hardness.notna()
+                if valid.any():
+                    ax_h.plot(
+                        x[valid], hardness[valid],
+                        linewidth=1.0, alpha=0.82, color=color,
+                        label=f"Test {test_number:03d}",
+                    )
+                    hardness_means.append(float(hardness[valid].mean()))
+
+            if "Modulus (GPa)" in test_df:
+                modulus = pd.to_numeric(test_df["Modulus (GPa)"], errors="coerce")
+                valid = x.notna() & modulus.notna()
+                if valid.any():
+                    ax_m.plot(
+                        x[valid], modulus[valid],
+                        linewidth=1.0, alpha=0.82, color=color,
+                        label=f"Test {test_number:03d}",
+                    )
+                    modulus_means.append(float(modulus[valid].mean()))
+
+        def _stats_text(label: str, values: List[float], unit: str) -> str:
+            finite = np.asarray(values, dtype=float)
+            finite = finite[np.isfinite(finite)]
+            if finite.size == 0:
+                return f"Mean {label} = n/a\nStd. Dev. = n/a"
+            mean_value = float(np.mean(finite))
+            sd_value = float(np.std(finite, ddof=1)) if finite.size > 1 else 0.0
+            return f"Mean {label} = {mean_value:.3g} {unit}\nStd. Dev. = {sd_value:.3g} {unit}"
+
+        ax_h.text(
+            0.02, 0.95,
+            _stats_text("Hardness", hardness_means, "GPa"),
+            transform=ax_h.transAxes, ha="left", va="top",
+            fontsize=9, color="#24313a",
+            bbox=dict(facecolor="#ffffff", edgecolor="none", alpha=0.72, pad=3),
+        )
+        ax_m.text(
+            0.02, 0.95,
+            _stats_text("Modulus", modulus_means, "GPa"),
+            transform=ax_m.transAxes, ha="left", va="top",
+            fontsize=9, color="#24313a",
+            bbox=dict(facecolor="#ffffff", edgecolor="none", alpha=0.72, pad=3),
+        )
+
+        ax_h.set_ylabel("Hardness (GPa)")
+        ax_m.set_ylabel("Modulus (GPa)")
+        ax_m.set_xlabel("Displacement into Surface (nm)")
+        ax_h.set_title("Hardness profiles", fontsize=10, fontweight="bold", color="#24313a")
+        ax_m.set_title("Modulus profiles", fontsize=10, fontweight="bold", color="#24313a")
+
+        if len(test_numbers) <= 12:
+            ax_h.legend(loc="best", fontsize=7, framealpha=0.85)
+        fig.tight_layout(rect=[0, 0, 1, 0.94])
 
     def export_csm_csv(self):
         if not self.csm_results or self.csm_results["averaged"].empty:
@@ -4701,6 +5175,7 @@ OVERALL VERDICT
 
         if included_results:
             self.create_summary_plot_tab(included_results)
+            self.create_load_overlay_plot_tab(included_results)
         elif self.reliability_widget:
             self.reliability_widget.figure.clear()
             ax = self.reliability_widget.figure.add_subplot(111)
@@ -4712,6 +5187,17 @@ OVERALL VERDICT
                 transform=ax.transAxes
             )
             self.reliability_widget.canvas.draw()
+            if self.op_overlay_widget:
+                self.op_overlay_widget.figure.clear()
+                ax_overlay = self.op_overlay_widget.figure.add_subplot(111)
+                ax_overlay.axis('off')
+                ax_overlay.text(
+                    0.5, 0.5,
+                    "No tests selected for final calculations.",
+                    ha='center', va='center', fontsize=12, color='#24313a',
+                    transform=ax_overlay.transAxes
+                )
+                self.op_overlay_widget.canvas.draw()
             if self.summary_statistics_text:
                 self.summary_statistics_text.setPlainText("No tests selected for final calculations.")
 
@@ -4915,14 +5401,17 @@ OVERALL VERDICT
                     "Workflow"
                 )
             self._last_csm_selection_log_signature = signature
-            # Move user to settings tab so they can adjust CSM parameters
-            self.unlock_workflow_step(2, move_to_step=True)
+            # If the user is already on CSM Settings, run the CSM calculation now.
+            self.unlock_workflow_step(2, move_to_step=False)
             # Enable compute offsets button so user can run CSM-specific computations
             if getattr(self, 'csm_compute_offsets_button', None):
                 self.csm_compute_offsets_button.setEnabled(True)
-            # Also enable analyze button for CSM path
             if getattr(self, 'analyze_button', None):
                 self.analyze_button.setEnabled(True)
+            if self.workflow_tabs and self.workflow_tabs.currentIndex() >= 2:
+                self.run_csm_analysis()
+            else:
+                self.unlock_workflow_step(2, move_to_step=True)
             return
 
     def _render_test_plot(self, widget: MatplotlibWidget, test_data: dict):
@@ -4936,10 +5425,22 @@ OVERALL VERDICT
 
         test_id = test_data.get('Test', 'Unknown')
 
-        loading_disp_raw  = test_data.get('Raw Loading Displacement (nm)', [])
-        loading_load_raw  = test_data.get('Raw Loading Load (mN)', [])
-        unloading_disp_raw = test_data.get('Raw Unloading Displacement (nm)', [])
-        unloading_load_raw = test_data.get('Raw Unloading Load (mN)', [])
+        fallback_index = self.current_test_index
+        file_curves, raw_unloading_needs_plot_shift = self._overlay_curve_data(test_data, fallback_index)
+        if file_curves is not None:
+            loading_disp_raw, loading_load_raw, unloading_disp_raw, unloading_load_raw = file_curves
+        else:
+            loading_disp_raw = test_data.get('Full Raw Loading Displacement (nm)', [])
+            loading_load_raw = test_data.get('Full Raw Loading Load (mN)', [])
+            unloading_disp_raw = test_data.get('Full Raw Unloading Displacement (nm)', [])
+            unloading_load_raw = test_data.get('Full Raw Unloading Load (mN)', [])
+            raw_unloading_needs_plot_shift = bool(loading_disp_raw or unloading_disp_raw)
+            if not loading_disp_raw or not loading_load_raw or not unloading_disp_raw or not unloading_load_raw:
+                loading_disp_raw  = test_data.get('Raw Loading Displacement (nm)', [])
+                loading_load_raw  = test_data.get('Raw Loading Load (mN)', [])
+                unloading_disp_raw = test_data.get('Raw Unloading Displacement (nm)', [])
+                unloading_load_raw = test_data.get('Raw Unloading Load (mN)', [])
+                raw_unloading_needs_plot_shift = False
         loading_fit_disp  = test_data.get('Loading Fit Displacement (nm)', [])
         loading_fit_load  = test_data.get('Loading Fit Load (mN)', [])
         unloading_fit_disp = test_data.get('Unloading Fit Displacement (nm)', [])
@@ -4957,7 +5458,7 @@ OVERALL VERDICT
         loading_r2  = test_data.get('Loading R²', 0) or 0
         unloading_r2 = test_data.get('Unloading Fit R²', 0) or 0
         loading_n = test_data.get('Loading Power n', None)
-        loading_h0 = test_data.get('Loading Offset h0 (nm)', None)
+        loading_h0 = self._current_overlay_h0_offset(test_data, fallback_index)
         unloading_plot_shift = test_data.get('Unloading Plot Shift (nm)', 0.0) or 0.0
 
         displacement_offset = 0.0
@@ -4969,19 +5470,89 @@ OVERALL VERDICT
             except (TypeError, ValueError):
                 displacement_offset = 0.0
 
-        def shifted_displacement(values):
+        def shifted_displacement(values, x_shift: float = 0.0):
             if values is None or len(values) == 0:
                 return values
-            return (np.asarray(values, dtype=float) - displacement_offset).tolist()
+            return (np.asarray(values, dtype=float) + float(x_shift) - displacement_offset).tolist()
 
         loading_disp_raw = shifted_displacement(loading_disp_raw)
-        unloading_disp_raw = shifted_displacement(unloading_disp_raw)
+        unloading_disp_raw = shifted_displacement(
+            unloading_disp_raw,
+            unloading_plot_shift if raw_unloading_needs_plot_shift else 0.0,
+        )
         loading_fit_disp = shifted_displacement(loading_fit_disp)
         unloading_fit_disp = shifted_displacement(unloading_fit_disp)
         tangent_disp = shifted_displacement(tangent_disp)
+
+        remove_hold_segment = self._op_overlay_remove_hold_segment()
+        if remove_hold_segment and not self.op_overlay_cutoff_user_set:
+            self._set_op_overlay_cutoff_default(self.get_included_results() if self.current_results else [test_data])
+        cutoff_load = self._op_overlay_cutoff_value() if remove_hold_segment else None
+        def trim_pair_to_cutoff(x_values, y_values):
+            try:
+                x_arr, y_arr = self._finite_xy(x_values, y_values)
+            except (TypeError, ValueError):
+                return [], []
+            if remove_hold_segment and cutoff_load is not None:
+                x_arr, y_arr = self._trim_overlay_curve_to_load_cutoff(x_arr, y_arr, cutoff_load)
+            return x_arr.tolist(), y_arr.tolist()
+
+        loading_disp_raw, loading_load_raw = trim_pair_to_cutoff(loading_disp_raw, loading_load_raw)
+        unloading_disp_raw, unloading_load_raw = trim_pair_to_cutoff(unloading_disp_raw, unloading_load_raw)
+        loading_fit_disp, loading_fit_load = trim_pair_to_cutoff(loading_fit_disp, loading_fit_load)
+        unloading_fit_disp, unloading_fit_load = trim_pair_to_cutoff(unloading_fit_disp, unloading_fit_load)
+        tangent_disp, tangent_load = trim_pair_to_cutoff(tangent_disp, tangent_load)
+
+        unloading_alignment_shift = 0.0
+        anchor_x = None
+        anchor_y = None
+        try:
+            h_load_for_align = np.asarray(loading_disp_raw, dtype=float)
+            p_load_for_align = np.asarray(loading_load_raw, dtype=float)
+            h_unload_for_align = np.asarray(unloading_disp_raw, dtype=float)
+            p_unload_for_align = np.asarray(unloading_load_raw, dtype=float)
+            shift_info = self._unloading_overlay_alignment_shift(
+                h_load_for_align, p_load_for_align, h_unload_for_align, p_unload_for_align
+            )
+            if shift_info is not None:
+                unloading_alignment_shift, anchor_x, anchor_y, _unload_start_idx = shift_info
+                aligned_unload_x = h_unload_for_align + unloading_alignment_shift
+                unloading_disp_raw = np.concatenate(([anchor_x], aligned_unload_x)).tolist()
+                unloading_load_raw = np.concatenate(([anchor_y], p_unload_for_align)).tolist()
+        except (TypeError, ValueError):
+            unloading_alignment_shift = 0.0
+
+        def shift_unloading_display(values):
+            if values is None or len(values) == 0 or not unloading_alignment_shift:
+                return values
+            return (np.asarray(values, dtype=float) + unloading_alignment_shift).tolist()
+
+        unloading_fit_disp = shift_unloading_display(unloading_fit_disp)
+        tangent_disp = shift_unloading_display(tangent_disp)
+
+        def anchor_unloading_line_to_peak(x_values, y_values):
+            if anchor_x is None or anchor_y is None or x_values is None or y_values is None:
+                return x_values, y_values
+            try:
+                x_arr, y_arr = self._finite_xy(x_values, y_values)
+            except (TypeError, ValueError):
+                return x_values, y_values
+            if x_arr.size == 0 or y_arr.size == 0:
+                return x_values, y_values
+            peak_idx = int(np.nanargmax(y_arr))
+            x_arr = x_arr.copy()
+            y_arr = y_arr.copy()
+            x_arr[peak_idx] = float(anchor_x)
+            y_arr[peak_idx] = float(anchor_y)
+            return x_arr.tolist(), y_arr.tolist()
+
+        unloading_fit_disp, unloading_fit_load = anchor_unloading_line_to_peak(
+            unloading_fit_disp, unloading_fit_load
+        )
+        tangent_disp, tangent_load = anchor_unloading_line_to_peak(tangent_disp, tangent_load)
         h_max_plot = h_max - displacement_offset
-        h_c_plot = h_c + unloading_plot_shift - displacement_offset
-        h_f_plot = (h_f + unloading_plot_shift - displacement_offset) if h_f is not None else None
+        h_c_plot = h_c + unloading_plot_shift - displacement_offset + unloading_alignment_shift
+        h_f_plot = (h_f + unloading_plot_shift - displacement_offset + unloading_alignment_shift) if h_f is not None else None
         p_max_plot = p_max
         if loading_disp_raw and loading_load_raw:
             try:
@@ -4994,12 +5565,21 @@ OVERALL VERDICT
             except (TypeError, ValueError):
                 p_max_plot = p_max
 
+        loading_plot_x, loading_plot_y = self._thin_curve_for_plot(
+            np.asarray(loading_disp_raw, dtype=float),
+            np.asarray(loading_load_raw, dtype=float),
+        )
+        unloading_plot_x, unloading_plot_y = self._thin_curve_for_plot(
+            np.asarray(unloading_disp_raw, dtype=float),
+            np.asarray(unloading_load_raw, dtype=float),
+        )
+
         # ── Raw data scatter ──────────────────────────────────────────────
-        if loading_disp_raw and loading_load_raw:
-            ax.scatter(loading_disp_raw, loading_load_raw, s=6, alpha=0.5,
+        if loading_plot_x.size and loading_plot_y.size:
+            ax.scatter(loading_plot_x, loading_plot_y, s=6, alpha=0.5,
                        color='#00a8cc', zorder=2, label='Loading data')
-        if unloading_disp_raw and unloading_load_raw:
-            ax.scatter(unloading_disp_raw, unloading_load_raw, s=6, alpha=0.5,
+        if unloading_plot_x.size and unloading_plot_y.size:
+            ax.scatter(unloading_plot_x, unloading_plot_y, s=6, alpha=0.5,
                        color='#ff6b6b', zorder=2, label='Unloading data')
 
         # ── Fitted curves ─────────────────────────────────────────────────
@@ -5048,7 +5628,6 @@ OVERALL VERDICT
         ax.set_xlim(left=0)
         ax.set_ylim(bottom=0)
         ax.grid(True, alpha=0.45, linestyle=':', color='#d6dbe0')
-
         # ── Results annotation box ────────────────────────────────────────
         r2_flag = 'pass' if loading_r2 >= 0.99 and unloading_r2 >= 0.99 else 'check'
         info = (
@@ -5081,7 +5660,10 @@ OVERALL VERDICT
                 self.step4_plot_buttons_note.setText("No analysis results available yet.")
             return
 
-        self.create_summary_plot_tab(results)
+        included_results = self.get_included_results() if self.current_results else results
+        if included_results:
+            self.create_summary_plot_tab(included_results)
+            self.create_load_overlay_plot_tab(included_results)
         self.populate_step4_plot_buttons(results)
         self.log_widget.append("Summary plot ready. Click a test name in Step 4 to view its curve.")
         # Auto-show first test
@@ -5256,6 +5838,510 @@ OVERALL VERDICT
                         bbox=dict(boxstyle='round,pad=0.8', facecolor='#fff0f0', edgecolor='#e74c3c', alpha=0.95), fontsize=9)
             ax_err.axis('off')
             summary_widget.canvas.draw()
+
+    def create_load_overlay_plot_tab(self, results: List[Dict[str, Any]]):
+        """Render an Oliver-Pharr batch load-displacement overlay plot."""
+        if not self.op_overlay_widget:
+            return
+
+        widget = self.op_overlay_widget
+        fig = widget.figure
+        fig.clear()
+        fig.patch.set_facecolor('#ffffff')
+        ax = fig.add_subplot(111)
+        ax.set_facecolor('#ffffff')
+
+        plotted_any = False
+        colors = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+        if not colors:
+            colors = ["#00a8cc", "#ffbe0b", "#2ecc71", "#e74c3c", "#9b59b6"]
+
+        remove_hold_segment = self._op_overlay_remove_hold_segment()
+        if remove_hold_segment and not self.op_overlay_cutoff_user_set:
+            self._set_op_overlay_cutoff_default(results)
+        cutoff_load = self._op_overlay_cutoff_value()
+        max_x = 0.0
+        max_y = 0.0
+        for idx, result in enumerate(results):
+            color = colors[idx % len(colors)]
+            curve_data, unloading_needs_plot_shift = self._overlay_curve_data(result, idx)
+            if curve_data is None:
+                continue
+            loading_disp, loading_load, unloading_disp, unloading_load = curve_data
+
+            offset = self._current_overlay_h0_offset(result, idx)
+            displacement_offset = offset if offset is not None else 0.0
+            unloading_plot_shift = result.get('Unloading Plot Shift (nm)', 0.0) or 0.0
+
+            def _finite_xy(x_values, y_values, x_shift: float = 0.0):
+                if x_values is None or y_values is None:
+                    return np.asarray([]), np.asarray([])
+                try:
+                    x = np.asarray(x_values, dtype=float) + float(x_shift) - displacement_offset
+                    y = np.asarray(y_values, dtype=float)
+                except (TypeError, ValueError):
+                    return np.asarray([]), np.asarray([])
+                valid = np.isfinite(x) & np.isfinite(y)
+                valid &= (np.abs(x) < 1e12) & (np.abs(y) < 1e12)
+                x = x[valid]
+                y = y[valid]
+                return x, y
+
+            x_load, y_load = _finite_xy(loading_disp, loading_load)
+            x_unload, y_unload = _finite_xy(
+                unloading_disp,
+                unloading_load,
+                unloading_plot_shift if unloading_needs_plot_shift else 0.0,
+            )
+            if remove_hold_segment:
+                x_load, y_load = self._trim_overlay_curve_to_load_cutoff(x_load, y_load, cutoff_load)
+                x_unload, y_unload = self._trim_overlay_curve_to_load_cutoff(x_unload, y_unload, cutoff_load)
+            x_unload, y_unload = self._align_unloading_overlay_to_loading(
+                x_load, y_load, x_unload, y_unload
+            )
+
+            test_label = self._test_log_label(result, idx)
+            if x_load.size > 1 and y_load.size > 1:
+                x_load_plot, y_load_plot = self._thin_curve_for_plot(x_load, y_load, max_points=1200)
+                ax.plot(x_load_plot, y_load_plot, color=color, linewidth=1.2, alpha=0.82, label=test_label)
+                plotted_any = True
+                max_x = max(max_x, float(np.nanmax(x_load)))
+                max_y = max(max_y, float(np.nanmax(y_load)))
+            if x_unload.size > 1 and y_unload.size > 1:
+                x_unload_plot, y_unload_plot = self._thin_curve_for_plot(x_unload, y_unload, max_points=1200)
+                ax.plot(x_unload_plot, y_unload_plot, color=color, linewidth=1.2, alpha=0.82)
+                plotted_any = True
+                max_x = max(max_x, float(np.nanmax(x_unload)))
+                max_y = max(max_y, float(np.nanmax(y_unload)))
+
+        if not plotted_any:
+            ax.axis('off')
+            ax.text(
+                0.5, 0.5,
+                "No load-displacement curve data available for included tests.",
+                ha='center', va='center', fontsize=12, color='#24313a',
+                transform=ax.transAxes
+            )
+            widget.canvas.draw()
+            return
+
+        hardness_values = self._finite_result_values(results, 'Hardness (GPa)')
+        modulus_values = self._finite_result_values(results, 'Oliver-Pharr Modulus (GPa)')
+        hardness_text = (
+            f"Mean Hardness = {float(np.mean(hardness_values)):.3g} GPa"
+            if hardness_values.size else "Mean Hardness = n/a"
+        )
+        modulus_text = (
+            f"Mean Modulus = {float(np.mean(modulus_values)):.3g} GPa"
+            if modulus_values.size else "Mean Modulus = n/a"
+        )
+        ax.text(
+            0.03, 0.95,
+            f"{hardness_text}\n{modulus_text}",
+            transform=ax.transAxes, ha='left', va='top',
+            fontsize=10, color='#24313a',
+            bbox=dict(facecolor='#ffffff', edgecolor='none', alpha=0.70, pad=3),
+        )
+
+        if max_x > 0 and max_y > 0:
+            ax.annotate(
+                "Loading",
+                xy=(0.48 * max_x, 0.62 * max_y),
+                xytext=(0.30 * max_x, 0.45 * max_y),
+                arrowprops=dict(arrowstyle='->', lw=1.1, color='#24313a'),
+                color='#24313a', fontsize=9,
+            )
+            ax.annotate(
+                "Unloading",
+                xy=(0.70 * max_x, 0.28 * max_y),
+                xytext=(0.78 * max_x, 0.47 * max_y),
+                arrowprops=dict(arrowstyle='->', lw=1.1, color='#24313a'),
+                color='#24313a', fontsize=9,
+            )
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor('#d6dbe0')
+        ax.tick_params(colors='#24313a', labelsize=9)
+        ax.xaxis.label.set_color('#24313a')
+        ax.yaxis.label.set_color('#24313a')
+        ax.title.set_color('#24313a')
+        ax.grid(True, alpha=0.35, linestyle=':', color='#d6dbe0')
+        ax.set_xlabel('Corrected displacement  h - h0  (nm)', fontsize=11)
+        ax.set_ylabel('Load On Sample (mN)', fontsize=11)
+        ax.set_title('Oliver-Pharr Load-Displacement Overlay', fontsize=12, fontweight='bold', pad=10)
+        ax.set_xlim(left=0)
+        ax.set_ylim(bottom=0)
+        if len(results) <= 12:
+            ax.legend(loc='lower right', fontsize=7, framealpha=0.86, facecolor='#ffffff', edgecolor='#c7d0d8')
+        fig.tight_layout()
+        widget.canvas.draw()
+
+    def _current_overlay_h0_offset(self, result: Dict[str, Any], fallback_index: int) -> Optional[float]:
+        test_number = self._test_number_from_result(result, fallback_index)
+        if test_number is not None:
+            edited_offset = self._finite_float_or_none(self.csm_offsets.get(int(test_number)))
+            if edited_offset is not None:
+                return edited_offset
+        return self._finite_float_or_none(result.get('Loading Offset h0 (nm)'))
+
+    @staticmethod
+    def _curve_tuple_has_data(curves: Tuple[List[float], List[float], List[float], List[float]]) -> bool:
+        return all(values is not None and len(values) > 0 for values in curves)
+
+    @staticmethod
+    def _thin_curve_for_plot(
+        x: np.ndarray,
+        y: np.ndarray,
+        max_points: int = 1600,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Reduce dense display curves while preserving endpoints and the load peak."""
+        if x.size != y.size or x.size <= max_points or max_points < 4:
+            return x, y
+        valid = np.isfinite(x) & np.isfinite(y)
+        if np.count_nonzero(valid) <= max_points:
+            return x[valid], y[valid]
+        valid_indices = np.where(valid)[0]
+        peak_idx = valid_indices[int(np.nanargmax(y[valid]))]
+        base = np.linspace(0, x.size - 1, max_points - 3, dtype=int)
+        indices = np.unique(np.concatenate((base, [0, peak_idx, x.size - 1])))
+        indices = indices[np.isfinite(x[indices]) & np.isfinite(y[indices])]
+        return x[indices], y[indices]
+
+    def _overlay_curve_data(
+        self,
+        result: Dict[str, Any],
+        fallback_index: int,
+    ) -> Tuple[Optional[Tuple[List[float], List[float], List[float], List[float]]], bool]:
+        """Return curve arrays and whether unloading still needs the analysis plot shift."""
+        full_curves = (
+            result.get('Full Raw Loading Displacement (nm)', []),
+            result.get('Full Raw Loading Load (mN)', []),
+            result.get('Full Raw Unloading Displacement (nm)', []),
+            result.get('Full Raw Unloading Load (mN)', []),
+        )
+        if self._curve_tuple_has_data(full_curves):
+            return full_curves, True
+
+        raw_curves = (
+            result.get('Raw Loading Displacement (nm)', []),
+            result.get('Raw Loading Load (mN)', []),
+            result.get('Raw Unloading Displacement (nm)', []),
+            result.get('Raw Unloading Load (mN)', []),
+        )
+        if self._curve_tuple_has_data(raw_curves):
+            return raw_curves, False
+
+        file_curves = self._load_full_overlay_curves_from_file(result, fallback_index)
+        if file_curves is not None:
+            return file_curves, True
+        return None, False
+
+    def _load_full_overlay_curves_from_file(
+        self,
+        result: Dict[str, Any],
+        fallback_index: int,
+    ) -> Optional[Tuple[List[float], List[float], List[float], List[float]]]:
+        file_path = self.current_analysis_file_path
+        if not file_path and getattr(self, "file_path_edit", None):
+            file_path = self.file_path_edit.text()
+        if not file_path or not os.path.exists(file_path):
+            return None
+
+        test_number = self._test_number_from_result(result, fallback_index)
+        if test_number is None:
+            return None
+        cache_key = (str(Path(file_path).resolve()), int(test_number))
+        cached = self.overlay_curve_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            loader = self.selected_file_loader()
+            sheet_name = f"Test {int(test_number):03d}"
+            if hasattr(loader, "get_sheet_names"):
+                resolved_path = str(Path(file_path).resolve())
+                sheet_names = self.overlay_sheet_names_cache.get(resolved_path)
+                if sheet_names is None:
+                    sheet_names = loader.get_sheet_names(file_path)
+                    self.overlay_sheet_names_cache[resolved_path] = list(sheet_names)
+                matching = [
+                    name for name in sheet_names
+                    if self._test_number_from_sheet_name(str(name)) == int(test_number)
+                ]
+                if matching:
+                    sheet_name = matching[0]
+
+            if not hasattr(loader, "load_sheet"):
+                return None
+            raw_df, _units = loader.load_sheet(file_path, sheet_name)
+            if raw_df is None or raw_df.empty:
+                return None
+
+            if hasattr(loader, "normalize_sheet"):
+                df = loader.normalize_sheet(raw_df)
+            else:
+                df = raw_df.copy()
+            if df is None or df.empty or not {"Load (mN)", "Displacement (nm)"}.issubset(df.columns):
+                return None
+
+            full_df = df[["Displacement (nm)", "Load (mN)"]].copy()
+            full_df["Displacement (nm)"] = pd.to_numeric(full_df["Displacement (nm)"], errors="coerce")
+            full_df["Load (mN)"] = pd.to_numeric(full_df["Load (mN)"], errors="coerce")
+            full_df = full_df.replace([np.inf, -np.inf], np.nan).dropna()
+            if full_df.empty:
+                return None
+
+            peak_pos = int(np.argmax(full_df["Load (mN)"].to_numpy(dtype=float)))
+            loading_df = full_df.iloc[:peak_pos + 1]
+            unloading_df = full_df.iloc[peak_pos:]
+            curves = (
+                loading_df["Displacement (nm)"].tolist(),
+                loading_df["Load (mN)"].tolist(),
+                unloading_df["Displacement (nm)"].tolist(),
+                unloading_df["Load (mN)"].tolist(),
+            )
+            self.overlay_curve_cache[cache_key] = curves
+            return curves
+        except Exception:
+            return None
+
+    def _op_overlay_remove_hold_segment(self) -> bool:
+        if getattr(self, "op_overlay_hold_combo", None) is None:
+            return True
+        return self.op_overlay_hold_combo.currentIndex() == 0
+
+    def _op_overlay_cutoff_value(self) -> Optional[float]:
+        if getattr(self, "op_overlay_cutoff_spin", None) is None:
+            return None
+        self.op_overlay_cutoff_spin.interpretText()
+        value = float(self.op_overlay_cutoff_spin.value())
+        return value if np.isfinite(value) and value > 0 else None
+
+    def _sync_op_overlay_hold_controls(self, *_args):
+        remove_hold = self._op_overlay_remove_hold_segment()
+        for widget in (
+            getattr(self, "op_overlay_cutoff_label", None),
+            getattr(self, "op_overlay_cutoff_spin", None),
+        ):
+            if widget is not None:
+                widget.setVisible(remove_hold)
+        if remove_hold and not self.op_overlay_cutoff_user_set:
+            self._set_op_overlay_cutoff_default(self.get_included_results() if self.current_results else [])
+        self._refresh_op_overlay_options()
+
+    def _op_overlay_cutoff_changed(self, *_args):
+        if self.op_overlay_cutoff_syncing:
+            return
+        if getattr(self, "op_overlay_cutoff_spin", None) is not None:
+            self.op_overlay_cutoff_spin.interpretText()
+        self.op_overlay_cutoff_user_set = True
+        self._refresh_op_overlay_options()
+
+    def _refresh_op_overlay_options(self, *_args):
+        self.update_readiness_summary()
+        if getattr(self, "op_overlay_refresh_timer", None) is not None:
+            self.op_overlay_refresh_timer.start(120)
+            return
+        self._refresh_op_overlay_options_now()
+
+    def _refresh_op_overlay_options_now(self):
+        included_results = self.get_included_results() if self.current_results else []
+        if included_results:
+            self.create_load_overlay_plot_tab(included_results)
+
+    def _set_op_overlay_cutoff_default(self, results: List[Dict[str, Any]]):
+        if getattr(self, "op_overlay_cutoff_spin", None) is None or not results:
+            return
+        cutoff = self._default_op_overlay_cutoff(results)
+        if cutoff is None:
+            return
+        self.op_overlay_cutoff_syncing = True
+        self.op_overlay_cutoff_spin.blockSignals(True)
+        self.op_overlay_cutoff_spin.setValue(float(cutoff))
+        self.op_overlay_cutoff_spin.blockSignals(False)
+        self.op_overlay_cutoff_syncing = False
+
+    def _default_op_overlay_cutoff(self, results: List[Dict[str, Any]]) -> Optional[float]:
+        peak_loads: List[float] = []
+        for idx, result in enumerate(results):
+            curve_data, _unloading_needs_plot_shift = self._overlay_curve_data(result, idx)
+            if curve_data is None:
+                continue
+            _loading_disp, loading_load, _unloading_disp, unloading_load = curve_data
+            try:
+                loads = np.asarray(list(loading_load) + list(unloading_load), dtype=float)
+            except (TypeError, ValueError):
+                continue
+            loads = loads[np.isfinite(loads)]
+            if loads.size:
+                peak_loads.append(float(np.nanmax(loads)))
+        if not peak_loads:
+            return None
+        return float(np.nanmin(np.asarray(peak_loads, dtype=float)))
+
+    @staticmethod
+    def _trim_overlay_curve_to_load_cutoff(
+        x: np.ndarray,
+        y: np.ndarray,
+        cutoff: Optional[float],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        if cutoff is None or not np.isfinite(cutoff) or cutoff <= 0:
+            return x, y
+        if x.size != y.size or x.size < 2:
+            return x, y
+
+        valid = np.isfinite(x) & np.isfinite(y)
+        x = x[valid]
+        y = y[valid]
+        if x.size < 2:
+            return x, y
+
+        cutoff = float(cutoff)
+        cutoff_tol = max(1e-6, abs(cutoff) * 1e-7)
+        below_cutoff = y < (cutoff - cutoff_tol)
+        at_or_above_cutoff = ~below_cutoff
+
+        def interpolate_cutoff(idx_a: int, idx_b: int) -> Tuple[float, float]:
+            x_a, y_a = float(x[idx_a]), float(y[idx_a])
+            x_b, y_b = float(x[idx_b]), float(y[idx_b])
+            denom = y_b - y_a
+            if abs(denom) < 1e-12:
+                return x_b, cutoff
+            frac = (cutoff - y_a) / denom
+            frac = float(np.clip(frac, 0.0, 1.0))
+            return x_a + frac * (x_b - x_a), cutoff
+
+        starts_above_cutoff = at_or_above_cutoff[0]
+        if starts_above_cutoff:
+            below_indices = np.where(below_cutoff)[0]
+            if below_indices.size == 0:
+                return np.asarray([float(x[0])], dtype=float), np.asarray([cutoff], dtype=float)
+            first_below = int(below_indices[0])
+            if first_below == 0:
+                return x, y
+            x_cut, y_cut = interpolate_cutoff(first_below - 1, first_below)
+            return (
+                np.concatenate(([x_cut], x[first_below:])),
+                np.concatenate(([y_cut], y[first_below:])),
+            )
+
+        at_or_above_indices = np.where(at_or_above_cutoff)[0]
+        if at_or_above_indices.size == 0:
+            return x, y
+        first_above = int(at_or_above_indices[0])
+        if first_above == 0:
+            return np.asarray([float(x[0])], dtype=float), np.asarray([cutoff], dtype=float)
+        x_cut, y_cut = interpolate_cutoff(first_above - 1, first_above)
+        return (
+            np.concatenate((x[:first_above], [x_cut])),
+            np.concatenate((y[:first_above], [y_cut])),
+        )
+
+    @staticmethod
+    def _align_unloading_overlay_to_loading(
+        x_load: np.ndarray,
+        y_load: np.ndarray,
+        x_unload: np.ndarray,
+        y_unload: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Shift unloading x values and anchor it to the loading peak."""
+        shift_info = NanoindentationGUI._unloading_overlay_alignment_shift(
+            x_load, y_load, x_unload, y_unload
+        )
+        if shift_info is None:
+            return x_unload, y_unload
+        shift, anchor_x, anchor_y, unload_start_idx = shift_info
+        shifted_x = x_unload + shift
+        if shifted_x.size == 0:
+            return shifted_x, y_unload
+
+        already_anchored = (
+            np.isfinite(shifted_x[unload_start_idx])
+            and np.isfinite(y_unload[unload_start_idx])
+            and abs(float(shifted_x[unload_start_idx]) - anchor_x) < 1e-6
+            and abs(float(y_unload[unload_start_idx]) - anchor_y) < 1e-6
+        )
+        if already_anchored:
+            return shifted_x, y_unload
+
+        anchored_x = np.concatenate(([anchor_x], shifted_x))
+        anchored_y = np.concatenate(([anchor_y], y_unload))
+        return anchored_x, anchored_y
+
+    @staticmethod
+    def _unloading_overlay_alignment_shift(
+        x_load: np.ndarray,
+        y_load: np.ndarray,
+        x_unload: np.ndarray,
+        y_unload: np.ndarray,
+    ) -> Optional[Tuple[float, float, float, int]]:
+        """Return the x-shift needed to put unloading start at the loading peak."""
+        load_valid = np.isfinite(x_load) & np.isfinite(y_load)
+        unload_valid = np.isfinite(x_unload) & np.isfinite(y_unload)
+        if np.count_nonzero(load_valid) == 0 or np.count_nonzero(unload_valid) == 0:
+            return None
+
+        load_indices = np.where(load_valid)[0]
+        unload_indices = np.where(unload_valid)[0]
+        peak_local_idx = int(np.nanargmax(y_load[load_valid]))
+        load_peak_idx = int(load_indices[peak_local_idx])
+        unload_start_idx = int(unload_indices[0])
+
+        anchor_x = float(x_load[load_peak_idx])
+        anchor_y = float(y_load[load_peak_idx])
+        shift = float(anchor_x - x_unload[unload_start_idx])
+        if not np.isfinite(shift):
+            return None
+        return shift, anchor_x, anchor_y, int(unload_start_idx)
+
+    @staticmethod
+    def _remove_high_load_horizontal_overlay_segments(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Break peak-hold shelves in overlay curves while preserving the experimental ramp."""
+        if x.size != y.size or x.size < 4:
+            return x, y
+        y_max = float(np.nanmax(y))
+        if not np.isfinite(y_max) or y_max <= 0:
+            return x, y
+
+        dx = np.diff(x)
+        dy = np.diff(y)
+        high_load = (y[:-1] >= 0.90 * y_max) & (y[1:] >= 0.90 * y_max)
+        slope = np.divide(
+            np.abs(dy),
+            np.maximum(np.abs(dx), 1e-9),
+            out=np.full_like(dy, np.inf, dtype=float),
+            where=np.abs(dx) > 1e-9,
+        )
+        horizontal = slope <= 0.08
+        moving_in_x = np.abs(dx) >= 0.1
+        plateau_segment = high_load & horizontal & moving_in_x
+        if not np.any(plateau_segment):
+            return x, y
+
+        cleaned_x: List[float] = []
+        cleaned_y: List[float] = []
+        in_gap = False
+        for idx in range(x.size - 1):
+            if not in_gap:
+                cleaned_x.append(float(x[idx]))
+                cleaned_y.append(float(y[idx]))
+            if plateau_segment[idx]:
+                if not in_gap:
+                    cleaned_x.append(np.nan)
+                    cleaned_y.append(np.nan)
+                    in_gap = True
+            else:
+                if in_gap:
+                    cleaned_x.append(float(x[idx + 1]))
+                    cleaned_y.append(float(y[idx + 1]))
+                    in_gap = False
+
+        if not in_gap:
+            cleaned_x.append(float(x[-1]))
+            cleaned_y.append(float(y[-1]))
+        if len(cleaned_x) < 2:
+            return x, y
+        return np.asarray(cleaned_x, dtype=float), np.asarray(cleaned_y, dtype=float)
 
     def _create_axis_range_spinbox(self) -> QDoubleSpinBox:
         spinbox = QDoubleSpinBox()
@@ -6208,12 +7294,17 @@ OVERALL VERDICT
             self.update_header_experiment_file(file_path)
             self.csm_file_path = file_path
             self.reload_button.setEnabled(True)
+            if self.generate_curves_button:
+                self.generate_curves_button.setEnabled(True)
             self.analyze_button.setEnabled(False)
             self.step2_next_button.setEnabled(False)
             self.current_results.clear()
             self.csm_results = None
             self.csm_offsets.clear()
             self.file_load_offsets.clear()
+            self.overlay_curve_cache.clear()
+            self.overlay_sheet_names_cache.clear()
+            self.op_overlay_cutoff_user_set = False
             self.clear_step4_plot_buttons()
             self.results_table.setRowCount(0)
             self.update_expert_offsets_status()
@@ -6226,13 +7317,12 @@ OVERALL VERDICT
             self.refresh_live_plot_source()
             self.append_research_log(f"Selected experiment file: {file_path}", "File")
             self.append_research_log(
-                "Auto-generating loading curves and loading h0 offsets from the selected file. "
-                "Those file-load offsets become the default reference values for Expert Mode.",
+                "File selected. Click Generate Test Curves to create loading/unloading review plots "
+                "and file-load h0 offsets for Expert Mode.",
                 "Workflow"
             )
-            self.status_bar.showMessage(f"File selected: {Path(file_path).name}")
+            self.status_bar.showMessage(f"File selected: {Path(file_path).name}. Click Generate Test Curves to start.")
             self.update_results_summary_strip()
-            self.generate_loading_curves_for_selection()
     
     def reload_file(self):
         """Reload the current file"""
@@ -6261,6 +7351,8 @@ OVERALL VERDICT
         
         try:
             self.current_analysis_file_path = str(Path(file_path).resolve())
+            self.overlay_curve_cache.clear()
+            self.overlay_sheet_names_cache.clear()
             use_new_analyzer = NanoindentationAnalyzer is not None
             if not use_new_analyzer and FixedIndentXLSAnalyzer is not None:
                 self.analyzer = FixedIndentXLSAnalyzer(filename=file_path)
@@ -6285,6 +7377,8 @@ OVERALL VERDICT
             
             # Setup UI for analysis
             self.analyze_button.setEnabled(False)
+            if self.generate_curves_button:
+                self.generate_curves_button.setEnabled(False)
             self.cancel_button.setEnabled(True)
             self.step4_next_button.setEnabled(False)
             self.progress_bar.setVisible(True)
@@ -6383,6 +7477,7 @@ OVERALL VERDICT
                 .get('unloading', {})
                 .get('filtered_data', pd.DataFrame())
             )
+            original_df = test_data.get('data_processing', {}).get('original_data', pd.DataFrame())
             loading_phase = test_data.get('data_processing', {}).get('phases', {}).get('loading', {})
             max_load_mn = loading_phase.get('max_load', 0.0)
             max_disp_nm = loading_phase.get('max_displacement', 0.0)
@@ -6401,6 +7496,23 @@ OVERALL VERDICT
             raw_loading_load = loading_df.get('Load (mN)', pd.Series(dtype=float)).tolist() if isinstance(loading_df, pd.DataFrame) else []
             raw_unloading_disp = unloading_df.get('Displacement (nm)', pd.Series(dtype=float)).tolist() if isinstance(unloading_df, pd.DataFrame) else []
             raw_unloading_load = unloading_df.get('Load (mN)', pd.Series(dtype=float)).tolist() if isinstance(unloading_df, pd.DataFrame) else []
+            full_raw_loading_disp = list(raw_loading_disp)
+            full_raw_loading_load = list(raw_loading_load)
+            full_raw_unloading_disp = list(raw_unloading_disp)
+            full_raw_unloading_load = list(raw_unloading_load)
+            if isinstance(original_df, pd.DataFrame) and {"Load (mN)", "Displacement (nm)"}.issubset(original_df.columns):
+                full_df = original_df[["Displacement (nm)", "Load (mN)"]].copy()
+                full_df["Displacement (nm)"] = pd.to_numeric(full_df["Displacement (nm)"], errors="coerce")
+                full_df["Load (mN)"] = pd.to_numeric(full_df["Load (mN)"], errors="coerce")
+                full_df = full_df.replace([np.inf, -np.inf], np.nan).dropna()
+                if not full_df.empty:
+                    peak_pos = int(np.argmax(full_df["Load (mN)"].to_numpy(dtype=float)))
+                    full_loading_df = full_df.iloc[:peak_pos + 1]
+                    full_unloading_df = full_df.iloc[peak_pos:]
+                    full_raw_loading_disp = full_loading_df["Displacement (nm)"].tolist()
+                    full_raw_loading_load = full_loading_df["Load (mN)"].tolist()
+                    full_raw_unloading_disp = full_unloading_df["Displacement (nm)"].tolist()
+                    full_raw_unloading_load = full_unloading_df["Load (mN)"].tolist()
             raw_loading_disp, raw_loading_load, raw_unloading_disp, raw_unloading_load, plot_load_cap, unloading_plot_shift = (
                 self._prepare_peak_matched_plot_data(
                     raw_loading_disp,
@@ -6579,6 +7691,10 @@ OVERALL VERDICT
                 'Raw Loading Load (mN)': raw_loading_load,
                 'Raw Unloading Displacement (nm)': raw_unloading_disp,
                 'Raw Unloading Load (mN)': raw_unloading_load,
+                'Full Raw Loading Displacement (nm)': full_raw_loading_disp,
+                'Full Raw Loading Load (mN)': full_raw_loading_load,
+                'Full Raw Unloading Displacement (nm)': full_raw_unloading_disp,
+                'Full Raw Unloading Load (mN)': full_raw_unloading_load,
                 'Loading Fit Displacement (nm)': loading_fit_disp,
                 'Loading Fit Load (mN)': loading_fit_load,
                 'Unloading Fit Displacement (nm)': unloading_fit_disp,
@@ -6805,6 +7921,8 @@ OVERALL VERDICT
     def analysis_finished(self):
         """Clean up after analysis finishes"""
         self.analyze_button.setEnabled(bool(self.file_path_edit.text()))
+        if self.generate_curves_button:
+            self.generate_curves_button.setEnabled(bool(self.file_path_edit.text()))
         self.cancel_button.setEnabled(False)
         self.progress_bar.setVisible(False)
         
