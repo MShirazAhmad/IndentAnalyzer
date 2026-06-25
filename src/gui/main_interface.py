@@ -417,9 +417,7 @@ class MatplotlibWidget(QWidget):
         self._canvas_draw = self.canvas.draw
         self.canvas.draw = self._draw_with_plot_settings
         self.toolbar = NavigationToolbar(self.canvas, self)
-        self.plot_editor_action = self.toolbar.addAction("Edit Plot")
-        self.plot_editor_action.setToolTip("Open this plot in the external plot editor.")
-        self.plot_editor_action.triggered.connect(self.open_in_plot_editor)
+        self.plot_editor_action = self._add_plot_editor_button()
         self._apply_light_toolbar_style()
         
         self.canvas.setStyleSheet("background-color: #ffffff;")
@@ -438,6 +436,40 @@ class MatplotlibWidget(QWidget):
     def _draw_with_plot_settings(self, *args, **kwargs):
         self.apply_plot_settings()
         return self._canvas_draw(*args, **kwargs)
+
+    def _add_plot_editor_button(self) -> QAction:
+        """Add the large colorful plot-editor launcher to the Matplotlib toolbar."""
+        button = QPushButton("Plot Big Colorful")
+        button.setToolTip("Open this plot in the external plot editor.")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setMinimumWidth(168)
+        button.setMinimumHeight(34)
+        button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 #00a8cc, stop:0.55 #23c552, stop:1 #ffbe0b);
+                color: #ffffff;
+                border: 1px solid #0794af;
+                border-radius: 8px;
+                font-weight: 800;
+                padding: 6px 14px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                            stop:0 #05bfdc, stop:0.55 #31d969, stop:1 #ffd166);
+            }
+            QPushButton:pressed {
+                background: #0089a6;
+            }
+            QPushButton:disabled {
+                background: #cfd8dd;
+                color: #74828a;
+                border-color: #b7c2c8;
+            }
+        """)
+        button.clicked.connect(self.open_in_plot_editor)
+        self.toolbar.addSeparator()
+        return self.toolbar.addWidget(button)
 
     def apply_plot_settings(self):
         """Apply persistent user plot settings to all current axes before drawing."""
@@ -1060,9 +1092,7 @@ class IndentSubplotLayout:
         self.canvas.setStyleSheet("background-color: #ffffff;")
 
         self.toolbar = NavigationToolbar(self.canvas, self)
-        self.plot_editor_action = self.toolbar.addAction("Edit Plot")
-        self.plot_editor_action.setToolTip("Open this plot in the external plot editor.")
-        self.plot_editor_action.triggered.connect(self.open_in_plot_editor)
+        self.plot_editor_action = self._add_plot_editor_button()
         self._apply_light_toolbar_style()
 
         if layout is not None:
