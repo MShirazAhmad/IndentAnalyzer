@@ -439,7 +439,7 @@ class MatplotlibWidget(QWidget):
 
     def _add_plot_editor_button(self) -> QAction:
         """Add the large colorful plot-editor launcher to the Matplotlib toolbar."""
-        button = QPushButton("Plot Big Colorful")
+        button = QPushButton("Edit Plot")
         button.setToolTip("Open this plot in the external plot editor.")
         button.setCursor(Qt.PointingHandCursor)
         button.setMinimumWidth(168)
