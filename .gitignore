@@ -112,6 +112,9 @@ nbproject/private/
 # Samples, large datasets (untracked by default - uncomment if desired)
 # samples/
 
+# Local optional plot-editor launcher environment
+.figureforge-venv/
+
 # Ignore hidden directories (folders starting with a dot) anywhere in the repo,
 # but keep the Git metadata directory so repo functions remain intact.
 **/.[!.]*//

@@ -11,6 +11,8 @@ import json
 import configparser
 import re
 import shutil
+import pickle
+import subprocess
 from pathlib import Path
 import traceback
 from typing import Optional, Dict, Any, List, Set, Tuple
@@ -400,9 +402,14 @@ class MatplotlibWidget(QWidget):
             "ymin": None,
             "ymax": None,
         }
+        self.plot_subplot_limits: Dict[int, Dict[str, Optional[float]]] = {}
         self.plot_figure_size: Optional[Tuple[float, float]] = None
-        self.plot_axes_aspect: Optional[str] = None
+        self.plot_subplot_layout: Optional[str] = None
         self._applying_plot_settings = False
+        self._plot_editor_process: Optional[subprocess.Popen] = None
+        self._plot_editor_output_path: Optional[str] = None
+        self._plot_editor_stderr: str = ""
+        self._last_plot_editor_transfer: Dict[str, Any] = {}
         
         # Create matplotlib figure and canvas with a light background
         self.figure = Figure(figsize=(12, 8), dpi=100, facecolor='#ffffff')
@@ -410,9 +417,9 @@ class MatplotlibWidget(QWidget):
         self._canvas_draw = self.canvas.draw
         self.canvas.draw = self._draw_with_plot_settings
         self.toolbar = NavigationToolbar(self.canvas, self)
-        self.plot_settings_action = self.toolbar.addAction("Plot Settings")
-        self.plot_settings_action.setToolTip("Set manual axis limits and figure aspect ratio for this result plot.")
-        self.plot_settings_action.triggered.connect(self.open_plot_settings_dialog)
+        self.plot_editor_action = self.toolbar.addAction("Edit Plot")
+        self.plot_editor_action.setToolTip("Open this plot in the external plot editor.")
+        self.plot_editor_action.triggered.connect(self.open_in_plot_editor)
         self._apply_light_toolbar_style()
         
         self.canvas.setStyleSheet("background-color: #ffffff;")
@@ -446,10 +453,17 @@ class MatplotlibWidget(QWidget):
                 if width > 0 and height > 0:
                     self.figure.set_size_inches(width, height, forward=False)
 
-            limits = self.plot_axis_limits
-            x_has_override = limits.get("xmin") is not None or limits.get("xmax") is not None
-            y_has_override = limits.get("ymin") is not None or limits.get("ymax") is not None
-            for ax in axes:
+            if self.plot_subplot_layout:
+                self._apply_subplot_layout(axes)
+
+            for ax_index, ax in enumerate(axes):
+                limits = dict(self.plot_axis_limits)
+                subplot_limits = self.plot_subplot_limits.get(ax_index, {})
+                for key, value in subplot_limits.items():
+                    if value is not None:
+                        limits[key] = value
+                x_has_override = limits.get("xmin") is not None or limits.get("xmax") is not None
+                y_has_override = limits.get("ymin") is not None or limits.get("ymax") is not None
                 if x_has_override:
                     current_xmin, current_xmax = ax.get_xlim()
                     xmin = limits["xmin"] if limits["xmin"] is not None else current_xmin
@@ -462,10 +476,35 @@ class MatplotlibWidget(QWidget):
                     ymax = limits["ymax"] if limits["ymax"] is not None else current_ymax
                     if np.isfinite(ymin) and np.isfinite(ymax) and float(ymax) > float(ymin):
                         ax.set_ylim(float(ymin), float(ymax))
-                if self.plot_axes_aspect:
-                    ax.set_aspect(self.plot_axes_aspect, adjustable="box")
         finally:
             self._applying_plot_settings = False
+
+    def reset_plot_settings(self):
+        """Clear all manual display settings for this plot widget."""
+        self.plot_axis_limits = {"xmin": None, "xmax": None, "ymin": None, "ymax": None}
+        self.plot_subplot_limits.clear()
+        self.plot_figure_size = None
+        self.plot_subplot_layout = None
+
+    def _apply_subplot_layout(self, axes: List[Any]):
+        """Stack all visible subplots vertically or horizontally."""
+        visible_axes = [ax for ax in axes if ax.get_visible()]
+        n_axes = len(visible_axes)
+        if n_axes < 2:
+            return
+        left, right = 0.11, 0.96
+        bottom, top = 0.11, 0.92
+        gap = 0.075
+        if self.plot_subplot_layout == "vertical":
+            height = max((top - bottom - gap * (n_axes - 1)) / n_axes, 0.05)
+            for idx, ax in enumerate(visible_axes):
+                y0 = top - (idx + 1) * height - idx * gap
+                ax.set_position([left, y0, right - left, height])
+        elif self.plot_subplot_layout == "horizontal":
+            width = max((right - left - gap * (n_axes - 1)) / n_axes, 0.05)
+            for idx, ax in enumerate(visible_axes):
+                x0 = left + idx * (width + gap)
+                ax.set_position([x0, bottom, width, top - bottom])
 
     def open_plot_settings_dialog(self):
         """Open per-plot controls for limits and aspect ratio."""
@@ -482,6 +521,17 @@ class MatplotlibWidget(QWidget):
             xlim = (0.0, 1.0)
             ylim = (0.0, 1.0)
         fig_w, fig_h = self.plot_figure_size or tuple(float(v) for v in self.figure.get_size_inches())
+
+        target_combo = QComboBox()
+        target_combo.addItem("All subplots", None)
+        for idx, ax in enumerate(axes):
+            title = ax.get_title().strip()
+            label = f"Subplot {idx + 1}"
+            if title:
+                label += f" - {title[:32]}"
+            target_combo.addItem(label, idx)
+        target_combo.setToolTip("For CSM plots, set shared X limits on All subplots and Y limits per subplot.")
+        form.addRow("Apply limits to:", target_combo)
 
         limit_widgets: Dict[str, Tuple[QCheckBox, QDoubleSpinBox]] = {}
 
@@ -504,10 +554,47 @@ class MatplotlibWidget(QWidget):
             form.addRow(label, row)
             limit_widgets[key] = (checkbox, spin)
 
+        def selected_axis_index() -> Optional[int]:
+            value = target_combo.currentData()
+            return int(value) if value is not None else None
+
+        def current_target_limits() -> Dict[str, Optional[float]]:
+            axis_index = selected_axis_index()
+            if axis_index is None:
+                return self.plot_axis_limits
+            return self.plot_subplot_limits.get(
+                axis_index,
+                {"xmin": None, "xmax": None, "ymin": None, "ymax": None},
+            )
+
+        def current_target_axis_limits() -> Tuple[Tuple[float, float], Tuple[float, float]]:
+            axis_index = selected_axis_index()
+            if axis_index is not None and 0 <= axis_index < len(axes):
+                return axes[axis_index].get_xlim(), axes[axis_index].get_ylim()
+            if axes:
+                return axes[0].get_xlim(), axes[0].get_ylim()
+            return (0.0, 1.0), (0.0, 1.0)
+
+        def load_limit_widgets():
+            target_limits = current_target_limits()
+            target_xlim, target_ylim = current_target_axis_limits()
+            defaults = {
+                "xmin": target_xlim[0],
+                "xmax": target_xlim[1],
+                "ymin": target_ylim[0],
+                "ymax": target_ylim[1],
+            }
+            for key, (checkbox, spin) in limit_widgets.items():
+                value = target_limits.get(key)
+                checkbox.setChecked(value is not None)
+                spin.setValue(float(value if value is not None else defaults[key]))
+                spin.setEnabled(value is not None)
+
         add_limit_row("xmin", "X min:", xlim[0])
         add_limit_row("xmax", "X max:", xlim[1])
         add_limit_row("ymin", "Y min:", ylim[0])
         add_limit_row("ymax", "Y max:", ylim[1])
+        target_combo.currentIndexChanged.connect(load_limit_widgets)
 
         size_row = QWidget()
         size_layout = QHBoxLayout(size_row)
@@ -538,14 +625,22 @@ class MatplotlibWidget(QWidget):
         size_layout.addWidget(height_spin)
         form.addRow("Image aspect ratio:", size_row)
 
-        axes_aspect_combo = QComboBox()
-        axes_aspect_combo.addItems(["Auto", "Equal"])
-        axes_aspect_combo.setCurrentText("Equal" if self.plot_axes_aspect == "equal" else "Auto")
-        axes_aspect_combo.setToolTip("Auto preserves normal plot scaling; Equal makes one x unit equal one y unit.")
-        form.addRow("Axis aspect:", axes_aspect_combo)
+        subplot_layout_combo = QComboBox()
+        subplot_layout_combo.addItems(["Original", "Vertical", "Horizontal"])
+        if self.plot_subplot_layout == "vertical":
+            subplot_layout_combo.setCurrentText("Vertical")
+        elif self.plot_subplot_layout == "horizontal":
+            subplot_layout_combo.setCurrentText("Horizontal")
+        else:
+            subplot_layout_combo.setCurrentText("Original")
+        subplot_layout_combo.setToolTip("Re-stack subplots in this result view as rows or columns.")
+        form.addRow("Subplot stack:", subplot_layout_combo)
 
         layout.addLayout(form)
-        note = QLabel("Manual limits apply to every subplot in this result view and persist when the plot redraws.")
+        note = QLabel(
+            "For CSM plots, use All subplots for shared X limits, then choose each subplot "
+            "to set separate hardness/modulus Y limits. Settings persist when the plot redraws."
+        )
         note.setWordWrap(True)
         note.setStyleSheet("color:#5e6a72;")
         layout.addWidget(note)
@@ -554,23 +649,35 @@ class MatplotlibWidget(QWidget):
         layout.addWidget(buttons)
 
         def apply_settings():
-            for key, (checkbox, spin) in limit_widgets.items():
-                self.plot_axis_limits[key] = float(spin.value()) if checkbox.isChecked() else None
+            axis_index = selected_axis_index()
+            target_limits = {
+                key: float(spin.value()) if checkbox.isChecked() else None
+                for key, (checkbox, spin) in limit_widgets.items()
+            }
+            if axis_index is None:
+                self.plot_axis_limits = target_limits
+            else:
+                self.plot_subplot_limits[axis_index] = target_limits
             if size_check.isChecked():
                 self.plot_figure_size = (float(width_spin.value()), float(height_spin.value()))
             else:
                 self.plot_figure_size = None
-            self.plot_axes_aspect = "equal" if axes_aspect_combo.currentText() == "Equal" else None
+            layout_choice = subplot_layout_combo.currentText()
+            if layout_choice == "Vertical":
+                self.plot_subplot_layout = "vertical"
+            elif layout_choice == "Horizontal":
+                self.plot_subplot_layout = "horizontal"
+            else:
+                self.plot_subplot_layout = None
             self.canvas.draw()
 
         def reset_settings():
-            self.plot_axis_limits = {"xmin": None, "xmax": None, "ymin": None, "ymax": None}
-            self.plot_figure_size = None
-            self.plot_axes_aspect = None
+            self.reset_plot_settings()
             for key, (checkbox, spin) in limit_widgets.items():
                 checkbox.setChecked(False)
             size_check.setChecked(False)
-            axes_aspect_combo.setCurrentText("Auto")
+            subplot_layout_combo.setCurrentText("Original")
+            load_limit_widgets()
             self.canvas.draw()
 
         buttons.button(QDialogButtonBox.Apply).clicked.connect(apply_settings)
@@ -578,6 +685,307 @@ class MatplotlibWidget(QWidget):
         buttons.rejected.connect(dialog.reject)
         buttons.button(QDialogButtonBox.Close).clicked.connect(dialog.accept)
         dialog.exec_()
+
+    def _find_plot_editor_python(self) -> Optional[str]:
+        candidates: List[str] = []
+        local_venv_python = app_resource_root() / ".figureforge-venv" / "bin" / "python"
+        if local_venv_python.exists():
+            candidates.append(str(local_venv_python))
+        for name in ("python3.13", "python3.12", "python3.11", "python3", "python"):
+            path = shutil.which(name)
+            if path and path not in candidates:
+                candidates.append(path)
+        if sys.executable and sys.executable not in candidates:
+            candidates.append(sys.executable)
+
+        for python_exe in candidates:
+            try:
+                result = subprocess.run(
+                    [python_exe, "-c", "import FigureForge"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=4,
+                    check=False,
+                )
+            except Exception:
+                continue
+            if result.returncode == 0:
+                return python_exe
+        return None
+
+    def _ensure_plot_editor_plugins(self, python_exe: str):
+        """Install lightweight IndentAnalyzer helpers into the local plot-editor plugin folder."""
+        try:
+            plugin_path_text = subprocess.check_output(
+                [
+                    python_exe,
+                    "-c",
+                    (
+                        "import pathlib, FigureForge; "
+                        "print(pathlib.Path(FigureForge.__file__).resolve().parent / "
+                        "'plugins' / 'indent_subplot_layout.py')"
+                    ),
+                ],
+                text=True,
+                timeout=5,
+            ).strip()
+            if not plugin_path_text:
+                return
+            plugin_path = Path(plugin_path_text)
+            plugin_path.parent.mkdir(parents=True, exist_ok=True)
+            plugin_code = '''from matplotlib.figure import Figure
+from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QVBoxLayout
+
+
+class IndentSubplotLayout:
+    name = "Subplot Layout"
+    tooltip = "Stack all subplots vertically or horizontally."
+    submenu = "IndentAnalyzer"
+
+    def run(self, obj):
+        fig = obj if isinstance(obj, Figure) else getattr(obj, "figure", None)
+        if fig is None or len(fig.axes) < 2:
+            return
+
+        dialog = QDialog()
+        dialog.setWindowTitle("Subplot Layout")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        mode_combo = QComboBox()
+        mode_combo.addItems(["Vertical", "Horizontal"])
+        form.addRow("Stack:", mode_combo)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
+        layout.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        visible_axes = [ax for ax in fig.axes if ax.get_visible()]
+        if len(visible_axes) < 2:
+            return
+        left, right = 0.11, 0.96
+        bottom, top = 0.11, 0.92
+        gap = 0.075
+        mode = mode_combo.currentText()
+        if mode == "Vertical":
+            height = max((top - bottom - gap * (len(visible_axes) - 1)) / len(visible_axes), 0.05)
+            for idx, ax in enumerate(visible_axes):
+                y0 = top - (idx + 1) * height - idx * gap
+                ax.set_position([left, y0, right - left, height])
+        else:
+            width = max((right - left - gap * (len(visible_axes) - 1)) / len(visible_axes), 0.05)
+            for idx, ax in enumerate(visible_axes):
+                x0 = left + idx * (width + gap)
+                ax.set_position([x0, bottom, width, top - bottom])
+'''
+            if not plugin_path.exists() or plugin_path.read_text(encoding="utf-8") != plugin_code:
+                plugin_path.write_text(plugin_code, encoding="utf-8")
+        except Exception as exc:
+            self.logger.warning("Could not install plot-editor IndentAnalyzer plugin: %s", exc)
+
+    def _figure_transfer_summary(self, figure: Figure) -> Dict[str, Any]:
+        """Summarize the Matplotlib artists that are expected to round-trip through the plot editor."""
+        axes_summary = []
+        for ax in figure.axes:
+            axes_summary.append({
+                "title": ax.get_title(),
+                "xlabel": ax.get_xlabel(),
+                "ylabel": ax.get_ylabel(),
+                "xlim": tuple(float(v) for v in ax.get_xlim()),
+                "ylim": tuple(float(v) for v in ax.get_ylim()),
+                "lines": len(ax.lines),
+                "collections": len(ax.collections),
+                "images": len(ax.images),
+                "patches": len(ax.patches),
+                "texts": len(ax.texts),
+                "tables": len(ax.tables),
+                "legend": ax.get_legend() is not None,
+            })
+        return {
+            "axes": len(figure.axes),
+            "size_inches": tuple(float(v) for v in figure.get_size_inches()),
+            "dpi": float(figure.dpi),
+            "figure_texts": len(figure.texts),
+            "axes_detail": axes_summary,
+        }
+
+    def _prepare_figure_for_plot_editor(self) -> Dict[str, Any]:
+        """Apply pending display settings and capture the exact figure state sent to the editor."""
+        self.apply_plot_settings()
+        try:
+            self._canvas_draw()
+        except Exception as exc:
+            self.logger.debug("Could not pre-draw plot before editor export: %s", exc)
+        summary = self._figure_transfer_summary(self.figure)
+        self._last_plot_editor_transfer = {"sent": summary}
+        self.logger.info(
+            "Plot editor export: axes=%s, figure_texts=%s, size=%s, dpi=%s",
+            summary["axes"],
+            summary["figure_texts"],
+            summary["size_inches"],
+            summary["dpi"],
+        )
+        return summary
+
+    def open_in_plot_editor(self):
+        """Open this figure in the external plot editor and import edits when it closes."""
+        if self._plot_editor_process and self._plot_editor_process.poll() is None:
+            QMessageBox.information(self, "Plot Editor Running", "The plot editor is already open for this plot.")
+            return
+        python_exe = self._find_plot_editor_python()
+        if not python_exe:
+            QMessageBox.warning(
+                self,
+                "Plot Editor Not Available",
+                "The external plot editor is not installed in a compatible Python environment.\n\n"
+                "Use the bundled optional editor environment or install the editor dependency "
+                "in a Python 3.11-3.13 environment."
+            )
+            return
+        self._ensure_plot_editor_plugins(python_exe)
+        self._prepare_figure_for_plot_editor()
+
+        timestamp = int(time.time() * 1000)
+        input_path = os.path.join(gettempdir(), f"indent_analyzer_plot_editor_{timestamp}_input.pkl")
+        output_path = os.path.join(gettempdir(), f"indent_analyzer_plot_editor_{timestamp}_output.pkl")
+        try:
+            with open(input_path, "wb") as handle:
+                pickle.dump(self.figure, handle, protocol=4)
+        except Exception as exc:
+            QMessageBox.warning(self, "Plot Editor Export Error", f"Could not prepare the current figure:\n{exc}")
+            return
+
+        runner = (
+            "import pickle, sys\n"
+            "from PySide6.QtWidgets import QApplication\n"
+            "from PySide6.QtCore import QTimer\n"
+            "from PySide6.QtGui import QIcon\n"
+            "from FigureForge.preferences import Preferences\n"
+            "from FigureForge.gui import MainWindow\n"
+            "class _SilentSplash:\n"
+            "    def showMessage(self, *args, **kwargs):\n"
+            "        pass\n"
+            "    def finish(self, *args, **kwargs):\n"
+            "        pass\n"
+            "prefs = Preferences()\n"
+            "prefs.set('show_welcome', False)\n"
+            "prefs.set('check_for_updates', False)\n"
+            "app = QApplication.instance() or QApplication(sys.argv)\n"
+            "splash = _SilentSplash()\n"
+            "window = MainWindow(splash, None)\n"
+            "window.setWindowIcon(QIcon())\n"
+            "window.setWindowTitle('Plot Editor')\n"
+            "window.fm.load_figure(sys.argv[1])\n"
+            "window.setWindowTitle('Plot Editor')\n"
+            "menubar = window.menuBar()\n"
+            "for action in list(menubar.actions()):\n"
+            "    menu = action.menu()\n"
+            "    title = action.text().replace('&', '')\n"
+            "    if title == 'Help':\n"
+            "        menubar.removeAction(action)\n"
+            "    elif title == 'Plugins' and menu is not None:\n"
+            "        for plugin_action in list(menu.actions()):\n"
+            "            text = plugin_action.text().replace('&', '')\n"
+            "            if text in {'Plugins Documentation', 'New Plugin', 'Open Plugins Folder...'}:\n"
+            "                menu.removeAction(plugin_action)\n"
+            "window.show()\n"
+            "window.setWindowTitle('Plot Editor')\n"
+            "splash.finish(window)\n"
+            "def select_initial_item():\n"
+            "    root = window.fm.fe.tree.topLevelItem(0)\n"
+            "    if root is not None:\n"
+            "        window.fm.fe.tree.setCurrentItem(root)\n"
+            "        window.fm.on_item_selected(root.reference)\n"
+            "QTimer.singleShot(0, select_initial_item)\n"
+            "app.exec()\n"
+            "with open(sys.argv[2], 'wb') as f:\n"
+            "    pickle.dump(window.fm.figure, f, protocol=4)\n"
+        )
+        try:
+            self._plot_editor_process = subprocess.Popen(
+                [python_exe, "-c", runner, input_path, output_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, "Plot Editor Launch Error", f"Could not start the plot editor:\n{exc}")
+            return
+
+        self._plot_editor_output_path = output_path
+        self._plot_editor_stderr = ""
+        self.plot_editor_action.setEnabled(False)
+        QTimer.singleShot(500, self._poll_plot_editor_process)
+
+    def _poll_plot_editor_process(self):
+        process = self._plot_editor_process
+        if process is None:
+            self.plot_editor_action.setEnabled(True)
+            return
+        if process.poll() is None:
+            QTimer.singleShot(500, self._poll_plot_editor_process)
+            return
+
+        stdout, stderr = process.communicate()
+        self._plot_editor_stderr = stderr or ""
+        self._plot_editor_process = None
+        self.plot_editor_action.setEnabled(True)
+        if process.returncode != 0:
+            message = self._plot_editor_stderr.strip() or stdout.strip() or "The plot editor exited with an error."
+            QMessageBox.warning(self, "Plot Editor Error", message[:4000])
+            return
+
+        output_path = self._plot_editor_output_path
+        if not output_path or not os.path.exists(output_path):
+            QMessageBox.information(self, "Plot Editor Closed", "The plot editor closed without returning an edited figure.")
+            return
+        try:
+            with open(output_path, "rb") as handle:
+                edited_figure = pickle.load(handle)
+            if not isinstance(edited_figure, Figure):
+                raise TypeError(f"Expected a Matplotlib Figure, got {type(edited_figure).__name__}")
+            returned_summary = self._figure_transfer_summary(edited_figure)
+            self._last_plot_editor_transfer["returned"] = returned_summary
+            self.logger.info(
+                "Plot editor import: axes=%s, figure_texts=%s, size=%s, dpi=%s",
+                returned_summary["axes"],
+                returned_summary["figure_texts"],
+                returned_summary["size_inches"],
+                returned_summary["dpi"],
+            )
+            self._replace_canvas_figure(edited_figure)
+        except Exception as exc:
+            QMessageBox.warning(self, "Plot Editor Import Error", f"Could not load the edited figure:\n{exc}")
+
+    def _replace_canvas_figure(self, figure: Figure):
+        """Replace the embedded Matplotlib canvas so edited figures do not merge with old axes."""
+        layout = self.layout()
+        old_toolbar = self.toolbar
+        old_canvas = self.canvas
+
+        self.figure = figure
+        self.canvas = FigureCanvas(self.figure)
+        self.figure.set_canvas(self.canvas)
+        self._canvas_draw = self.canvas.draw
+        self.canvas.draw = self._draw_with_plot_settings
+        self.canvas.setStyleSheet("background-color: #ffffff;")
+
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.plot_editor_action = self.toolbar.addAction("Edit Plot")
+        self.plot_editor_action.setToolTip("Open this plot in the external plot editor.")
+        self.plot_editor_action.triggered.connect(self.open_in_plot_editor)
+        self._apply_light_toolbar_style()
+
+        if layout is not None:
+            layout.replaceWidget(old_toolbar, self.toolbar)
+            layout.replaceWidget(old_canvas, self.canvas)
+        old_toolbar.deleteLater()
+        old_canvas.deleteLater()
+
+        self.reset_plot_settings()
+        self.canvas.draw()
 
     def _apply_light_toolbar_style(self):
         """Keep Matplotlib toolbar controls readable on the light application theme."""
@@ -1116,6 +1524,7 @@ class NanoindentationGUI(QMainWindow):
         self.csm_depth_plot_widget: Optional[MatplotlibWidget] = None
         self.csm_offset_plot_widget: Optional[MatplotlibWidget] = None
         self.csm_plot_mode_combo: Optional[QComboBox] = None
+        self.csm_reset_plot_settings_button: Optional[QPushButton] = None
         self.workflow_log_widget: Optional[QTextEdit] = None
         self.workflow_log_last_length: int = 0
         self.last_run_context: str = "analysis"
@@ -2791,10 +3200,17 @@ OVERALL VERDICT
         self.csm_compute_offsets_button.clicked.connect(self.compute_csm_offsets)
         csm_settings_layout.addWidget(self.csm_compute_offsets_button, 9, 0, 1, 2)
 
+        self.csm_reset_plot_settings_button = QPushButton("Reset CSM Plot Settings && Redraw")
+        self.csm_reset_plot_settings_button.setToolTip(
+            "Clear manual CSM axis limits, subplot stacking, and image aspect settings, then redraw the CSM plot."
+        )
+        self.csm_reset_plot_settings_button.clicked.connect(self.reset_csm_plot_settings_and_redraw)
+        csm_settings_layout.addWidget(self.csm_reset_plot_settings_button, 10, 0, 1, 2)
+
         self.csm_status_text = QTextEdit()
         self.csm_status_text.setReadOnly(True)
         self.csm_status_text.setFixedHeight(self.sp(92))
-        csm_settings_layout.addWidget(self.csm_status_text, 10, 0, 1, 2)
+        csm_settings_layout.addWidget(self.csm_status_text, 11, 0, 1, 2)
         step3_layout.addWidget(self.csm_settings_group)
 
         # ── Proceed options after settings ────────────────────────────────
@@ -4063,6 +4479,7 @@ OVERALL VERDICT
             results["publication_summary"] = publication_summary
             self.csm_results = results
             self._load_csm_table(averaged)
+            self._reset_csm_plot_settings()
             self._plot_csm_depth_profiles(averaged, results["source"])
             self.export_csv_button.setEnabled(True)
             self.export_excel_button.setEnabled(True)
@@ -4089,6 +4506,29 @@ OVERALL VERDICT
         finally:
             self.analyze_button.setEnabled(bool(self.file_path_edit.text()))
             self.progress_bar.setVisible(False)
+
+    def _reset_csm_plot_settings(self):
+        for widget in (
+            getattr(self, "csm_depth_plot_widget", None),
+            getattr(self, "csm_offset_plot_widget", None),
+        ):
+            if widget is not None and hasattr(widget, "reset_plot_settings"):
+                widget.reset_plot_settings()
+
+    def reset_csm_plot_settings_and_redraw(self):
+        self._reset_csm_plot_settings()
+        if self.csm_results:
+            averaged = self.csm_results.get("averaged")
+            source = self.csm_results.get("source", "instrument_exported")
+            if isinstance(averaged, pd.DataFrame) and not averaged.empty:
+                self._plot_csm_depth_profiles(averaged, str(source))
+                self._show_workflow_results("CSM Depth Profiles")
+                self.status_bar.showMessage("CSM plot settings reset and plot redrawn.")
+                self.append_csm_status_log("Reset CSM plot settings and redrew fresh CSM plots.", "CSM")
+                return
+        if self.csm_depth_plot_widget:
+            self.csm_depth_plot_widget.canvas.draw()
+        self.status_bar.showMessage("CSM plot settings reset.")
 
     def _load_csm_table(self, df: pd.DataFrame):
         if not self.csm_table:
