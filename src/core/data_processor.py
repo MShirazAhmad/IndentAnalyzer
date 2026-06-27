@@ -38,6 +38,17 @@ class ExcelDataLoader:
         self.loader_module_name = loader_module_name or "AgilentG200"
 
     def _load_selected_loader(self):
+        user_loader_dir = (
+            Path.home() / "Library" / "Application Support" / "IndentAnalyzer" / "fileloaders"
+            if sys.platform == "darwin"
+            else Path.home() / ".indentanalyzer" / "fileloaders"
+        )
+        user_loader_path = user_loader_dir / f"{self.loader_module_name}.py"
+        if user_loader_path.is_file():
+            return self._load_loader_from_path(
+                f"indent_user_fileloader_{self.loader_module_name}", user_loader_path
+            )
+
         module_name = f"fileloader.{self.loader_module_name}"
         try:
             return importlib.import_module(module_name)
@@ -55,6 +66,10 @@ class ExcelDataLoader:
                 f"File loader '{self.loader_module_name}' is unavailable in the application bundle "
                 f"and was not found at {loader_path}: {archived_import_error}"
             )
+        return self._load_loader_from_path(module_name, loader_path)
+
+    @staticmethod
+    def _load_loader_from_path(module_name: str, loader_path: Path):
         spec = importlib.util.spec_from_file_location(module_name, loader_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not import file loader: {loader_path}")

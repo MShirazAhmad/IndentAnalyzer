@@ -52,7 +52,17 @@ If time is absent in source data, the loader can synthesize a sequence index.
 
 ## Adding another instrument format
 
-Create a loader module under `src/fileloader/` that:
+For the macOS app, place custom loader modules in:
+
+```text
+~/Library/Application Support/IndentAnalyzer/fileloaders/
+```
+
+The folder is created automatically when IndentAnalyzer starts. Restart the app after copying a loader, then select its module name under **Settings → File Loader**. Keeping custom loaders outside `IndentAnalyzer.app` preserves the app signature and allows loaders to survive app upgrades.
+
+Custom loaders in this folder take precedence over bundled loaders with the same module name.
+
+For source development, create a bundled loader module under `src/fileloader/`. In either location, the loader must:
 
 1. Detects supported file extensions.
 2. Reads source data layout.
@@ -84,4 +94,3 @@ Replace with your loader module name when needed.
 - [Installation](installation.md)
 - [GUI Walkthrough](gui-walkthrough.md)
 - [Analysis Configuration](analysis-configuration.md)
-

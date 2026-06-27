@@ -2018,32 +2018,46 @@ class NanoindentationGUI(QMainWindow):
             self._sync_file_loader_menu_checks()
             self.refresh_live_plot_source()
 
-    def fileloader_dir(self) -> Path:
+    def bundled_fileloader_dir(self) -> Path:
         return app_resource_root() / "src" / "fileloader"
+
+    def user_fileloader_dir(self) -> Path:
+        loader_dir = app_user_data_dir() / "fileloaders"
+        loader_dir.mkdir(parents=True, exist_ok=True)
+        return loader_dir
+
+    def fileloader_dirs(self) -> List[Path]:
+        """Return loader locations in increasing precedence order."""
+        return [self.bundled_fileloader_dir(), self.user_fileloader_dir()]
 
     def discover_file_loaders(self) -> Dict[str, Any]:
         loaders: Dict[str, Any] = {}
-        loader_dir = self.fileloader_dir()
-        if not loader_dir.exists():
-            return loaders
-        for path in sorted(loader_dir.glob("*.py")):
-            if path.name.startswith("_"):
+        for loader_dir in self.fileloader_dirs():
+            if not loader_dir.exists():
                 continue
-            name = path.stem
-            try:
-                module = self._load_file_loader_module(name)
-                loaders[name] = module
-            except Exception as exc:
-                logging.getLogger('NanoindentationGUI').warning(
-                    "Could not load file loader %s: %s", name, exc
-                )
+            for path in sorted(loader_dir.glob("*.py")):
+                if path.name.startswith("_"):
+                    continue
+                name = path.stem
+                try:
+                    module = self._load_file_loader_module(name)
+                    loaders[name] = module
+                except Exception as exc:
+                    logging.getLogger('NanoindentationGUI').warning(
+                        "Could not load file loader %s: %s", name, exc
+                    )
         return loaders
 
     def _load_file_loader_module(self, loader_name: Optional[str] = None):
         loader_name = loader_name or self.selected_file_loader_name or "AgilentG200"
-        loader_path = self.fileloader_dir() / f"{loader_name}.py"
-        if not loader_path.exists():
-            raise FileNotFoundError(f"File loader not found: {loader_path}")
+        candidates = [
+            self.user_fileloader_dir() / f"{loader_name}.py",
+            self.bundled_fileloader_dir() / f"{loader_name}.py",
+        ]
+        loader_path = next((path for path in candidates if path.is_file()), None)
+        if loader_path is None:
+            searched = ", ".join(str(path) for path in candidates)
+            raise FileNotFoundError(f"File loader '{loader_name}' not found in: {searched}")
         spec = importlib.util.spec_from_file_location(f"indent_fileloader_{loader_name}", loader_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not import file loader: {loader_path}")
