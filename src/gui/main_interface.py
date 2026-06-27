@@ -1814,6 +1814,11 @@ class NanoindentationGUI(QMainWindow):
         """Create the application menu bar."""
         menu_bar = self.menuBar()
         settings_menu = menu_bar.addMenu("Settings")
+        cite_action = QAction("Cite", self)
+        cite_action.setMenuRole(QAction.NoRole)
+        cite_action.setStatusTip("Show the recommended IndentAnalyzer citation.")
+        cite_action.triggered.connect(self.show_citation_dialog)
+        menu_bar.addAction(cite_action)
         help_menu = menu_bar.addMenu("Help")
 
         self.file_loader_menu = settings_menu.addMenu("File Loader")
@@ -1829,6 +1834,23 @@ class NanoindentationGUI(QMainWindow):
         about_action.setStatusTip("Show project and author details.")
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
+
+    def show_citation_dialog(self):
+        """Show the recommended citation with a clickable DOI."""
+        citation = (
+            "Cite using Ahmad, M. S., &amp; Catledge, S. A. (2026). "
+            "IndentAnalyzer: Open-Source Nanoindentation Analysis Software (V2.0). "
+            "Zenodo. <a href='https://doi.org/10.5281/zenodo.20972772'>"
+            "https://doi.org/10.5281/zenodo.20972772</a>"
+        )
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Cite IndentAnalyzer")
+        dialog.setIcon(QMessageBox.Information)
+        dialog.setTextFormat(Qt.RichText)
+        dialog.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        dialog.setText(citation)
+        dialog.setStandardButtons(QMessageBox.Ok)
+        dialog.exec_()
 
     def _rebuild_file_loader_menu(self):
         if self.file_loader_menu is None:
@@ -4081,15 +4103,7 @@ OVERALL VERDICT
             return
         if item.column() == 0:
             included = item.checkState() == Qt.Checked
-            self._set_test_included_for_expert_table(int(test_number), included)
-            if self.current_results:
-                self.refresh_final_calculations()
-            else:
-                self._sync_expert_offsets_table()
-            if self._selected_live_plot_source() == "__all_tests__":
-                self.update_live_variable_plot()
-            state_text = "included" if included else "excluded"
-            self.status_bar.showMessage(f"Test {int(test_number):03d} {state_text} in Expert Mode.")
+            self._expert_inclusion_toggled(int(test_number), included)
             return
         if item.column() != 3:
             return
@@ -4118,6 +4132,23 @@ OVERALL VERDICT
             self.expert_offsets_table.blockSignals(False)
         self.expert_offsets_syncing = False
         self.status_bar.showMessage(f"Updated loading h0 offset for Test {test_number:03d}.")
+
+    def _expert_inclusion_toggled(self, test_number: int, included: bool):
+        """Apply a real Expert-table checkbox change everywhere inclusion is consumed."""
+        if self.expert_offsets_syncing:
+            return
+        self._set_test_included_for_expert_table(int(test_number), bool(included))
+        if self.current_results:
+            self.refresh_final_calculations()
+        else:
+            self._sync_expert_offsets_table()
+        if self._selected_live_plot_source() == "__all_tests__" and self.live_plot_has_rendered:
+            self.update_live_variable_plot()
+        self.update_readiness_summary()
+        state_text = "included" if included else "excluded"
+        if self.log_widget:
+            self.log_widget.append(f"Test {int(test_number):03d} {state_text} from Expert Mode.")
+        self.status_bar.showMessage(f"Test {int(test_number):03d} {state_text} in Expert Mode.")
 
     def _set_test_included_for_expert_table(self, test_number: int, included: bool):
         if included:
@@ -4192,8 +4223,7 @@ OVERALL VERDICT
                     offset_item.setToolTip("Generated at file load.")
 
                 read_only = Qt.ItemIsSelectable | Qt.ItemIsEnabled
-                status_item.setFlags(read_only | Qt.ItemIsUserCheckable)
-                status_item.setCheckState(Qt.Checked if included else Qt.Unchecked)
+                status_item.setFlags(read_only)
                 test_item.setFlags(read_only)
                 sheet_item.setFlags(read_only)
                 offset_item.setFlags(
@@ -4205,6 +4235,23 @@ OVERALL VERDICT
                 table.setItem(row, 1, test_item)
                 table.setItem(row, 2, sheet_item)
                 table.setItem(row, 3, offset_item)
+
+                use_container = QWidget()
+                use_layout = QHBoxLayout(use_container)
+                use_layout.setContentsMargins(0, 0, 0, 0)
+                use_layout.setAlignment(Qt.AlignCenter)
+                use_checkbox = QCheckBox()
+                use_checkbox.setChecked(bool(included))
+                use_checkbox.setToolTip(
+                    f"Include Test {int(test_number):03d} in plots and final calculations."
+                )
+                use_checkbox.setAccessibleName(f"Use Test {int(test_number):03d}")
+                use_layout.addWidget(use_checkbox)
+                table.setCellWidget(row, 0, use_container)
+                use_checkbox.toggled.connect(
+                    lambda checked, number=int(test_number):
+                    self._expert_inclusion_toggled(number, checked)
+                )
 
             table.resizeColumnsToContents()
         finally:
