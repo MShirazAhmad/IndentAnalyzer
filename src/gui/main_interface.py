@@ -1814,11 +1814,11 @@ class NanoindentationGUI(QMainWindow):
         """Create the application menu bar."""
         menu_bar = self.menuBar()
         settings_menu = menu_bar.addMenu("Settings")
-        cite_action = QAction("Cite", self)
-        cite_action.setMenuRole(QAction.NoRole)
+        self.cite_menu = menu_bar.addMenu("Cite")
+        cite_action = self.cite_menu.addAction("Show Citation…")
         cite_action.setStatusTip("Show the recommended IndentAnalyzer citation.")
         cite_action.triggered.connect(self.show_citation_dialog)
-        menu_bar.addAction(cite_action)
+        self.cite_menu.aboutToShow.connect(self._show_citation_from_top_menu)
         help_menu = menu_bar.addMenu("Help")
 
         self.file_loader_menu = settings_menu.addMenu("File Loader")
@@ -1834,6 +1834,15 @@ class NanoindentationGUI(QMainWindow):
         about_action.setStatusTip("Show project and author details.")
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
+
+    def _show_citation_from_top_menu(self):
+        """Make a single click on the macOS top-level Cite menu open the dialog."""
+        QTimer.singleShot(0, self._close_cite_menu_and_show_dialog)
+
+    def _close_cite_menu_and_show_dialog(self):
+        if getattr(self, "cite_menu", None) is not None:
+            self.cite_menu.close()
+        self.show_citation_dialog()
 
     def show_citation_dialog(self):
         """Show the recommended citation with a clickable DOI."""
