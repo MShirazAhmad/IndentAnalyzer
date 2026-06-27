@@ -10,6 +10,7 @@ import xlrd
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 from pathlib import Path
+import importlib
 import importlib.util
 import sys
 
@@ -37,12 +38,24 @@ class ExcelDataLoader:
         self.loader_module_name = loader_module_name or "AgilentG200"
 
     def _load_selected_loader(self):
+        module_name = f"fileloader.{self.loader_module_name}"
+        try:
+            return importlib.import_module(module_name)
+        except ImportError as archived_import_error:
+            # Development and user-supplied loaders may still be plain source
+            # files. PyInstaller loaders, however, live in the bundled module
+            # archive and are resolved by import_module above.
+            pass
+
         resource_root = Path(sys._MEIPASS) if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") else Path(__file__).resolve().parent.parent.parent
         loader_dir = resource_root / "src" / "fileloader"
         loader_path = loader_dir / f"{self.loader_module_name}.py"
         if not loader_path.exists():
-            raise FileNotFoundError(f"File loader not found: {loader_path}")
-        spec = importlib.util.spec_from_file_location(f"fileloader.{self.loader_module_name}", loader_path)
+            raise FileNotFoundError(
+                f"File loader '{self.loader_module_name}' is unavailable in the application bundle "
+                f"and was not found at {loader_path}: {archived_import_error}"
+            )
+        spec = importlib.util.spec_from_file_location(module_name, loader_path)
         if spec is None or spec.loader is None:
             raise ImportError(f"Could not import file loader: {loader_path}")
         module = importlib.util.module_from_spec(spec)

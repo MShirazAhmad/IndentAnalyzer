@@ -20,8 +20,14 @@ import webbrowser
 import logging
 import time
 import importlib.util
+from multiprocessing import freeze_support
 from datetime import datetime
 from tempfile import gettempdir
+
+# PyInstaller's multiprocessing workers must be diverted before importing Qt,
+# NumPy, SciPy, or the rest of the GUI in the spawned child process.
+if __name__ == "__main__":
+    freeze_support()
 
 # PyQt5 imports
 from PyQt5.QtWidgets import (
@@ -32,15 +38,8 @@ from PyQt5.QtWidgets import (
     QComboBox, QFrame, QSizePolicy, QHeaderView, QAbstractItemView, QAction,
     QDialog, QDialogButtonBox, QTabBar, QFormLayout
 )
-from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, QSize, QUrl
+from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer, QSize
 from PyQt5.QtGui import QFont, QPixmap, QIcon, QPalette, QColor, QPainter, QTextCursor
-
-try:
-    from PyQt5.QtWebEngineWidgets import QWebEngineView
-    QT_WEBENGINE_AVAILABLE = True
-except ImportError:
-    QWebEngineView = None
-    QT_WEBENGINE_AVAILABLE = False
 
 # Scientific computing imports
 import pandas as pd
@@ -52,13 +51,6 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from scipy.optimize import curve_fit
-
-try:
-    import plotly.graph_objects as go
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    go = None
-    PLOTLY_AVAILABLE = False
 
 # Add the current directory to Python path for local imports
 # Add the parent directory to Python path for imports
@@ -745,6 +737,17 @@ class MatplotlibWidget(QWidget):
                 return python_exe
         return None
 
+    def _find_bundled_plot_editor(self) -> Optional[str]:
+        """Return the packaged FigureForge bridge when running from the app bundle."""
+        candidates = [
+            app_resource_root() / "figureforge" / "IndentAnalyzerFigureForge",
+            app_resource_root() / "IndentAnalyzerFigureForge",
+        ]
+        for candidate in candidates:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        return None
+
     def _ensure_plot_editor_plugins(self, python_exe: str):
         """Install lightweight IndentAnalyzer helpers into the local plot-editor plugin folder."""
         try:
@@ -866,8 +869,9 @@ class IndentSubplotLayout:
         if self._plot_editor_process and self._plot_editor_process.poll() is None:
             QMessageBox.information(self, "Plot Editor Running", "The plot editor is already open for this plot.")
             return
-        python_exe = self._find_plot_editor_python()
-        if not python_exe:
+        bundled_editor = self._find_bundled_plot_editor()
+        python_exe = None if bundled_editor else self._find_plot_editor_python()
+        if not bundled_editor and not python_exe:
             QMessageBox.warning(
                 self,
                 "Plot Editor Not Available",
@@ -876,7 +880,8 @@ class IndentSubplotLayout:
                 "in a Python 3.11-3.13 environment."
             )
             return
-        self._ensure_plot_editor_plugins(python_exe)
+        if python_exe:
+            self._ensure_plot_editor_plugins(python_exe)
         self._prepare_figure_for_plot_editor()
 
         timestamp = int(time.time() * 1000)
@@ -1023,8 +1028,13 @@ class IndentSubplotLayout:
             "    pickle.dump(window.fm.figure, f, protocol=4)\n"
         )
         try:
+            command = (
+                [bundled_editor, input_path, output_path]
+                if bundled_editor
+                else [python_exe, "-c", runner, input_path, output_path]
+            )
             self._plot_editor_process = subprocess.Popen(
-                [python_exe, "-c", runner, input_path, output_path],
+                command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -1651,7 +1661,6 @@ class NanoindentationGUI(QMainWindow):
         self.live_plot_test_sheets: List[str] = []
         self.live_plot_range_signature: Optional[tuple] = None
         self.live_plot_has_rendered: bool = False
-        self.live_plot_html_path: Optional[Path] = None
         self.live_plot_sheet_combo: Optional[QComboBox] = None
         self.live_plot_x_combo: Optional[QComboBox] = None
         self.live_plot_y_combo: Optional[QComboBox] = None
@@ -1850,10 +1859,12 @@ class NanoindentationGUI(QMainWindow):
             "Nanoindentation Analysis Suite for ISO 14577-4:2016 workflows."
         )
         about.setInformativeText(
-            "Author: M Shiraz Ahmad<br>"
+            "Developer: Shiraz Ahmad<br>"
+            "Version: 2.0.0<br>"
+            "Revision date: June 27, 2026<br>"
             "Repository: "
-            "<a href='https://github.com/MShirazAhmad/IndentAnalyzer.git'>"
-            "https://github.com/MShirazAhmad/IndentAnalyzer.git</a><br><br>"
+            "<a href='https://github.com/MShirazAhmad/IndentAnalyzer'>"
+            "MShirazAhmad/IndentAnalyzer</a><br><br>"
             "Includes guided calibration, loading-curve review, Oliver-Pharr analysis, "
             "CSM support, Expert Mode plotting, and configurable analysis defaults."
         )
@@ -2434,7 +2445,7 @@ OVERALL VERDICT
                 self.results_panel_tabs.setCurrentIndex(idx)
             return
 
-        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Reliability", "Load Overlay", "Summary Statistics", "Curve Viewer", "CSM Averaged Data", "Results Table"):
+        for preferred in ("Calibration", "Calibration Metrics", "Expert Plot", "CSM Depth Profiles", "Load Overlay", "Reliability", "Summary Statistics", "Curve Viewer", "CSM Averaged Data", "Results Table"):
             if preferred not in visible_titles:
                 continue
             idx = self._results_tab_index(preferred)
@@ -2635,7 +2646,7 @@ OVERALL VERDICT
     
     def init_ui(self):
         """Initialize the user interface"""
-        self.setWindowTitle("Nanoindentation Analysis - ISO 14577-4:2016 Compliant")
+        self.setWindowTitle("IndentAnalyzer - ISO 14577-4:2016 Compliant")
         self.setMinimumSize(self.window_min_size)
         self.resize(self.window_target_size)
         self.setup_menu_bar()
@@ -3635,11 +3646,7 @@ OVERALL VERDICT
         tab_widget.addTab(self.csm_table, "CSM Averaged Data")
 
         # ── Expert Mode custom plot ───────────────────────────────────────
-        if PLOTLY_AVAILABLE and QT_WEBENGINE_AVAILABLE:
-            self.live_plot_widget = QWebEngineView()
-        else:
-            self.live_plot_widget = QTextEdit()
-            self.live_plot_widget.setReadOnly(True)
+        self.live_plot_widget = MatplotlibWidget()
         tab_widget.addTab(self.live_plot_widget, "Expert Plot")
         self._draw_expert_plot_placeholder()
         tab_widget.currentChanged.connect(lambda _idx: self._refresh_results_view_buttons())
@@ -3801,73 +3808,28 @@ OVERALL VERDICT
         if self.live_plot_widget is None:
             return
         self._set_expert_plot_html(
-            """
-            <div class="placeholder">
-              <h1>Expert Plot</h1>
-              <p>Load a file in Step 2, then use Expert Mode on the left to choose tests and X/Y variables.</p>
-              <p>Click <b>Show Plot on Right</b> to generate the Plotly chart.</p>
-            </div>
-            """
+            "Expert Plot\n\nLoad a file in Step 2, then use Expert Mode on the left "
+            "to choose tests and X/Y variables.\nClick Show Plot on Right to generate the chart."
         )
 
-    def _expert_plot_html_shell(self, body: str) -> str:
-        return f"""
-        <html>
-        <head>
-        <style>
-          html, body {{
-            margin: 0;
-            height: 100%;
-            background: #ffffff;
-            color: #24313a;
-            font-family: Arial, Helvetica, sans-serif;
-          }}
-          .placeholder {{
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-          }}
-          h1 {{
-            margin: 0 0 12px;
-            font-size: {self.fp(24)}px;
-          }}
-          p {{
-            margin: 4px 0;
-            color: #5e6a72;
-            font-size: {self.fp(14)}px;
-          }}
-        </style>
-        </head>
-        <body>{body}</body>
-        </html>
-        """
-
     def _set_expert_plot_html(self, body_or_html: str, already_full_html: bool = False):
-        html = body_or_html if already_full_html else self._expert_plot_html_shell(body_or_html)
-        html = html.replace(":focus-visible", ":focus")
+        """Render a text state on the Matplotlib-backed Expert Plot canvas."""
         if self.live_plot_widget is None:
             return
-        if hasattr(self.live_plot_widget, "load"):
-            render_id = int(time.time() * 1000)
-            tmp_path = Path(gettempdir()) / f"indentanalyzer_expert_plot_{render_id}.html"
-            tmp_path.write_text(html, encoding="utf-8")
-            self.live_plot_html_path = tmp_path
-            url = QUrl.fromLocalFile(str(tmp_path))
-            url.setQuery(f"v={render_id}")
-            self.live_plot_widget.load(url)
-        elif hasattr(self.live_plot_widget, "setContent"):
-            self.live_plot_widget.setContent(
-                html.encode("utf-8"),
-                "text/html;charset=UTF-8",
-                QUrl("about:blank")
-            )
-        elif hasattr(self.live_plot_widget, "setHtml"):
-            self.live_plot_widget.setHtml(html)
-        elif hasattr(self.live_plot_widget, "setPlainText"):
-            self.live_plot_widget.setPlainText("Plotly/WebEngine is not available. Install plotly and PyQtWebEngine.")
+        text = re.sub(r"<[^>]+>", " ", str(body_or_html))
+        text = re.sub(r"\s+", " ", text).strip()
+        figure = self.live_plot_widget.figure
+        figure.clear()
+        figure.patch.set_facecolor("#ffffff")
+        axis = figure.add_subplot(111)
+        axis.axis("off")
+        axis.text(
+            0.5, 0.5, text,
+            ha="center", va="center", wrap=True,
+            fontsize=self.fp(13), color="#5e6a72",
+            transform=axis.transAxes,
+        )
+        self.live_plot_widget.canvas.draw()
 
     def _sync_workflow_log_tab(self):
         if not self.workflow_log_widget or not self.log_widget:
@@ -7468,18 +7430,11 @@ OVERALL VERDICT
 
         return x, y, x_label
     def update_live_variable_plot(self):
-        """Render the Expert Mode Plotly chart only when the user clicks the plot button."""
+        """Render the Expert Mode Matplotlib chart when the user clicks the plot button."""
         if self.live_plot_widget is None:
             return
 
         self.live_plot_has_rendered = True
-        if not PLOTLY_AVAILABLE or go is None:
-            self._set_expert_plot_html(
-                "<div class='placeholder'><h1>Plotly unavailable</h1>"
-                "<p>Install plotly to render Expert Mode plots.</p></div>"
-            )
-            return
-
         source = self._selected_live_plot_source()
         x_col, y_col = self._selected_live_plot_columns()
 
@@ -7582,19 +7537,18 @@ OVERALL VERDICT
                     )
                 return
 
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=x,
-            y=y,
-            mode="lines",
-            name=self.live_plot_sheet_combo.currentText() if self.live_plot_sheet_combo else "Selected sheet",
-            line=dict(color="#0b3d91", width=3.4, dash="solid", shape="linear"),
-            hovertemplate=(
-                f"{x_axis_label}: %{{x:.6g}}<br>"
-                f"{self._live_plot_label(y_col)}: %{{y:.6g}}"
-                "<extra>%{fullData.name}</extra>"
-            ),
-        ))
+        figure = self.live_plot_widget.figure
+        figure.clear()
+        figure.patch.set_facecolor("#ffffff")
+        axis = figure.add_subplot(111)
+        axis.set_facecolor("#ffffff")
+        axis.plot(
+            x,
+            y,
+            color="#0b3d91",
+            linewidth=2.4,
+            label=self.live_plot_sheet_combo.currentText() if self.live_plot_sheet_combo else "Selected sheet",
+        )
 
         lsq_status = ""
         lsq_fit = None
@@ -7609,18 +7563,13 @@ OVERALL VERDICT
                 lsq_status = lsq_error
             else:
                 fit_name = f"LSQ polynomial degree {lsq_fit['degree']}"
-                fig.add_trace(go.Scatter(
-                    x=lsq_fit["x_fit"],
-                    y=lsq_fit["y_fit"],
-                    mode="lines",
-                    name=fit_name,
-                    line=dict(color="#b00020", width=3.0, dash="solid", shape="linear"),
-                    hovertemplate=(
-                        f"{x_axis_label}: %{{x:.6g}}<br>"
-                        f"LSQ fit {self._live_plot_label(y_col)}: %{{y:.6g}}"
-                        f"<extra>{fit_name}</extra>"
-                    ),
-                ))
+                axis.plot(
+                    lsq_fit["x_fit"],
+                    lsq_fit["y_fit"],
+                    color="#b00020",
+                    linewidth=2.2,
+                    label=fit_name,
+                )
                 if lsq_fit["roots"]:
                     root_text = ", ".join(f"{root:.6g}" for root in lsq_fit["roots"])
                     lsq_status = f"LSQ y=0 x-intercept: {root_text}"
@@ -7631,15 +7580,7 @@ OVERALL VERDICT
                     for root in lsq_fit["roots"]:
                         if not np.isfinite(root):
                             continue
-                        fig.add_trace(go.Scatter(
-                            x=[root, root],
-                            y=[y_marker_min, y_marker_max],
-                            mode="lines",
-                            name=f"y=0 x={root:.4g}",
-                            line=dict(color="#b00020", width=1.4, dash="solid"),
-                            hoverinfo="skip",
-                            showlegend=False,
-                        ))
+                        axis.vlines(root, y_marker_min, y_marker_max, color="#b00020", linewidth=1.2)
                 else:
                     lo, hi = lsq_fit["x_range"]
                     lsq_status = f"LSQ fit has no y=0 crossing between x={lo:.6g} and x={hi:.6g}."
@@ -7647,34 +7588,22 @@ OVERALL VERDICT
                     lsq_status = f"{lsq_status} {lsq_error}"
 
         title = f"Custom Plot: {self._live_plot_label(y_col)} vs {x_axis_label}"
-        fig.update_layout(
-            template="plotly_white",
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff",
-            title=title,
-            xaxis_title=x_axis_label,
-            yaxis_title=self._live_plot_label(y_col),
-            margin=dict(l=64, r=32, t=56, b=56),
-            legend=dict(bgcolor="rgba(255,255,255,0.9)", bordercolor="#d6dbe0", borderwidth=1),
-        )
+        axis.set_title(title, fontsize=12, fontweight="bold", color="#24313a")
+        axis.set_xlabel(x_axis_label)
+        axis.set_ylabel(self._live_plot_label(y_col))
+        axis.grid(True, alpha=0.35, linestyle=":", color="#aeb8bf")
         if use_custom_ranges:
-            fig.update_xaxes(range=[xmin, xmax])
-            fig.update_yaxes(range=[ymin, ymax])
+            axis.set_xlim(xmin, xmax)
+            axis.set_ylim(ymin, ymax)
         if lsq_fit is not None:
             zero_visible = not use_custom_ranges or (ymin <= 0 <= ymax)
             if zero_visible:
                 x0, x1 = lsq_fit["x_range"]
                 if np.isfinite(x0) and np.isfinite(x1) and x0 != x1:
-                    fig.add_trace(go.Scatter(
-                        x=[x0, x1],
-                        y=[0, 0],
-                        mode="lines",
-                        name="y=0",
-                        line=dict(color="#8a949b", width=1.2, dash="solid"),
-                        hoverinfo="skip",
-                        showlegend=False,
-                    ))
-        self._set_expert_plot_html(fig.to_html(full_html=True, include_plotlyjs=True, config={"responsive": True}), already_full_html=True)
+                    axis.hlines(0, x0, x1, color="#8a949b", linewidth=1.0)
+        axis.legend(facecolor="#ffffff", edgecolor="#d6dbe0", fontsize=8)
+        figure.tight_layout(pad=1.4)
+        self.live_plot_widget.canvas.draw()
 
         if self.live_plot_status_label is not None:
             range_note = " with custom ranges" if use_custom_ranges else ""
@@ -7747,7 +7676,11 @@ OVERALL VERDICT
         plotted = 0
         all_x = []
         all_y = []
-        fig = go.Figure()
+        figure = self.live_plot_widget.figure
+        figure.clear()
+        figure.patch.set_facecolor("#ffffff")
+        axis = figure.add_subplot(111)
+        axis.set_facecolor("#ffffff")
         color_cycle = [
             "#0b3d91",
             "#b00020",
@@ -7775,19 +7708,13 @@ OVERALL VERDICT
             if x.size < 2 or y.size < 2:
                 continue
             label = sheet_name.replace("Test ", "")
-            fig.add_trace(go.Scatter(
-                x=x,
-                y=y,
-                mode="lines",
-                name=label,
-                line=dict(width=2.8, color=color_cycle[plotted % len(color_cycle)], dash="solid", shape="linear"),
-                opacity=1,
-                hovertemplate=(
-                    f"{x_axis_label}: %{{x:.6g}}<br>"
-                    f"{self._live_plot_label(y_col)}: %{{y:.6g}}"
-                    "<extra>Test %{fullData.name}</extra>"
-                ),
-            ))
+            axis.plot(
+                x,
+                y,
+                label=label,
+                linewidth=1.8,
+                color=color_cycle[plotted % len(color_cycle)],
+            )
             all_x.extend(x.tolist())
             all_y.extend(y.tolist())
             plotted += 1
@@ -7814,20 +7741,21 @@ OVERALL VERDICT
 
         signature = ("__all_tests__", x_col, y_col)
         self._set_expert_range_fields(all_x, all_y, x_col, y_col, signature)
-        fig.update_layout(
-            template="plotly_white",
-            paper_bgcolor="#ffffff",
-            plot_bgcolor="#ffffff",
-            title=f"Selected Expert Tests: {self._live_plot_label(y_col)} vs {x_axis_label}",
-            xaxis_title=x_axis_label,
-            yaxis_title=self._live_plot_label(y_col),
-            margin=dict(l=64, r=32, t=56, b=56),
-            legend=dict(bgcolor="rgba(255,255,255,0.9)", bordercolor="#d6dbe0", borderwidth=1),
+        axis.set_title(
+            f"Selected Expert Tests: {self._live_plot_label(y_col)} vs {x_axis_label}",
+            fontsize=12,
+            fontweight="bold",
+            color="#24313a",
         )
+        axis.set_xlabel(x_axis_label)
+        axis.set_ylabel(self._live_plot_label(y_col))
+        axis.grid(True, alpha=0.35, linestyle=":", color="#aeb8bf")
+        axis.legend(facecolor="#ffffff", edgecolor="#d6dbe0", fontsize=8)
         if use_custom_ranges:
-            fig.update_xaxes(range=[xmin, xmax])
-            fig.update_yaxes(range=[ymin, ymax])
-        self._set_expert_plot_html(fig.to_html(full_html=True, include_plotlyjs=True, config={"responsive": True}), already_full_html=True)
+            axis.set_xlim(xmin, xmax)
+            axis.set_ylim(ymin, ymax)
+        figure.tight_layout(pad=1.4)
+        self.live_plot_widget.canvas.draw()
 
         if self.live_plot_status_label is not None:
             range_note = " with custom ranges" if use_custom_ranges else ""
@@ -8463,10 +8391,25 @@ OVERALL VERDICT
             if normalized_results:
                 self.create_plot_tabs(normalized_results)
                 if not loading_curve_preview:
-                    self._show_workflow_results("Reliability")
+                    self._show_workflow_results("Load Overlay")
         
         else:
-            self.log_widget.append("⚠️ No valid results obtained from analysis")
+            failure_details: List[str] = []
+            if isinstance(results, dict):
+                failure_details.extend(str(error) for error in results.get("errors", []) if error)
+                for test_name, test_result in results.get("tests", {}).items():
+                    if not isinstance(test_result, dict) or test_result.get("success", False):
+                        continue
+                    test_errors = [str(error) for error in test_result.get("errors", []) if error]
+                    if test_errors:
+                        failure_details.append(f"{test_name}: {test_errors[0]}")
+            detail_text = "\n".join(failure_details[:8])
+            message = "No valid test curves were generated."
+            if detail_text:
+                message += f"\n\n{detail_text}"
+            self.log_widget.append(f"⚠️ {message}")
+            self.status_bar.showMessage("No valid test curves were generated. Review the reported file-loader errors.")
+            QMessageBox.warning(self, "Curve Generation Failed", message)
             self.update_results_summary_strip()
         self._configure_results_panel_visibility()
     
@@ -8546,8 +8489,8 @@ def main():
     app = QApplication(sys.argv)
     
     # Set application properties
-    app.setApplicationName("Nanoindentation Analysis")
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationName("IndentAnalyzer")
+    app.setApplicationVersion("2.0.0")
     app.setOrganizationName("Research Lab")
     
     # Create and show main window

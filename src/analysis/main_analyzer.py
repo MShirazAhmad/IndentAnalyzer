@@ -6,8 +6,12 @@ ISO 14577-4:2016 compliant analysis engine with modular architecture
 
 import pandas as pd
 import numpy as np
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from contextlib import contextmanager
+from multiprocessing import current_process, get_context
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Tuple
 import warnings
 import logging
 
@@ -30,6 +34,51 @@ except ImportError:
 logger = logging.getLogger(__name__)
 if not logger.handlers:
     logger.addHandler(logging.NullHandler())
+
+
+_NUMERICAL_THREAD_ENV_VARS = (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
+
+
+@contextmanager
+def _single_threaded_child_environment():
+    """Make each process single-threaded so a process pool cannot oversubscribe CPUs."""
+    previous = {name: os.environ.get(name) for name in _NUMERICAL_THREAD_ENV_VARS}
+    try:
+        for name in _NUMERICAL_THREAD_ENV_VARS:
+            os.environ[name] = "1"
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def _analyze_test_process(payload: Tuple[str, pd.DataFrame, Dict[str, Any]]):
+    """Analyze one test in a spawned process and return a picklable result."""
+    sheet_name, sheet_data, settings = payload
+    analyzer = NanoindentationAnalyzer(
+        area_function_coefficients=settings["area_function_coefficients"],
+        sample_poisson=settings["sample_poisson"],
+        indenter_material=settings["indenter_material"],
+    )
+    analyzer.iso.MIN_R_SQUARED = settings["min_r_squared"]
+    analyzer.iso.STIFFNESS_RANGE_PERCENT = settings["stiffness_range_percent"]
+    analyzer.curve_fitter.iso.MIN_R_SQUARED = settings["min_r_squared"]
+    analyzer.curve_fitter.iso.STIFFNESS_RANGE_PERCENT = settings["stiffness_range_percent"]
+    result = analyzer.analyze_single_test(
+        sheet_data,
+        settings["test_name"],
+        settings["fitting_method"],
+    )
+    return sheet_name, result
 
 
 class NanoindentationAnalyzer:
@@ -82,8 +131,9 @@ class NanoindentationAnalyzer:
         self.analysis_results = {}
         self.batch_results = {}
         
-    def analyze_file(self, file_path: Union[str, Path], 
-                    fitting_method: str = 'oliver_pharr') -> Dict[str, any]:
+    def analyze_file(self, file_path: Union[str, Path],
+                    fitting_method: str = 'oliver_pharr',
+                    max_workers: Optional[int] = None) -> Dict[str, any]:
         """
         Analyze a single nanoindentation file
         
@@ -121,24 +171,26 @@ class NanoindentationAnalyzer:
                 results['warnings'].extend(load_result['warnings'])
                 return results
             
-            # Analyze each sheet/test
-            successful_tests = 0
-            total_tests = 0
-            
-            for sheet_name, sheet_data in load_result['data'].items():
-                total_tests += 1
-                test_name = f"{file_path.stem}_{sheet_name}"
-                
-                logger.info(f"Analyzing test: {test_name}")
-                
-                test_result = self.analyze_single_test(
-                    sheet_data, test_name, fitting_method
+            # Each sheet is independent. Analyze them in separate processes so
+            # nonlinear curve fits can use more than one CPU core.
+            sheet_items = list(load_result['data'].items())
+            total_tests = len(sheet_items)
+            worker_count = self._resolve_worker_count(total_tests, max_workers)
+            if worker_count > 1:
+                analyzed_tests = self._analyze_tests_parallel(
+                    sheet_items, file_path, fitting_method, worker_count, results['warnings']
                 )
-                
-                results['tests'][sheet_name] = test_result
-                
-                if test_result['success']:
-                    successful_tests += 1
+            else:
+                analyzed_tests = self._analyze_tests_sequential(
+                    sheet_items, file_path, fitting_method
+                )
+
+            # Rebuild in workbook order; futures naturally finish out of order.
+            for sheet_name, _sheet_data in sheet_items:
+                results['tests'][sheet_name] = analyzed_tests[sheet_name]
+            successful_tests = sum(
+                bool(test_result.get('success')) for test_result in results['tests'].values()
+            )
             
             # Generate file summary
             results['file_summary'] = {
@@ -158,6 +210,81 @@ class NanoindentationAnalyzer:
             logger.error(f"Error analyzing file {file_path}: {str(e)}")
         
         return results
+
+    @staticmethod
+    def _resolve_worker_count(test_count: int, requested: Optional[int]) -> int:
+        """Choose a conservative process count, with an environment override."""
+        if test_count < 2 or current_process().daemon:
+            return 1
+        if requested is None:
+            configured = os.environ.get("INDENT_ANALYZER_WORKERS", "").strip()
+            if configured:
+                try:
+                    requested = int(configured)
+                except ValueError:
+                    logger.warning("Ignoring invalid INDENT_ANALYZER_WORKERS=%r", configured)
+        if requested is None:
+            requested = min(4, max(1, (os.cpu_count() or 2) - 1))
+        return max(1, min(int(requested), test_count))
+
+    def _worker_settings(self, file_path: Path, sheet_name: str,
+                         fitting_method: str) -> Dict[str, Any]:
+        return {
+            "area_function_coefficients": dict(self.area_function.coefficients),
+            "sample_poisson": self.sample_poisson,
+            "indenter_material": self.indenter_material,
+            "min_r_squared": self.iso.MIN_R_SQUARED,
+            "stiffness_range_percent": self.iso.STIFFNESS_RANGE_PERCENT,
+            "fitting_method": fitting_method,
+            "test_name": f"{file_path.stem}_{sheet_name}",
+        }
+
+    def _analyze_tests_sequential(self, sheet_items, file_path: Path,
+                                  fitting_method: str) -> Dict[str, Any]:
+        analyzed = {}
+        for sheet_name, sheet_data in sheet_items:
+            test_name = f"{file_path.stem}_{sheet_name}"
+            logger.info("Analyzing test: %s", test_name)
+            analyzed[sheet_name] = self.analyze_single_test(
+                sheet_data, test_name, fitting_method
+            )
+        return analyzed
+
+    def _analyze_tests_parallel(self, sheet_items, file_path: Path,
+                                fitting_method: str, worker_count: int,
+                                warnings_list: List[str]) -> Dict[str, Any]:
+        analyzed = {}
+        futures = {}
+        logger.info("Analyzing %d tests with %d processes", len(sheet_items), worker_count)
+        try:
+            # Spawn is required by macOS and is the reliable mode for a frozen app.
+            with _single_threaded_child_environment():
+                with ProcessPoolExecutor(
+                    max_workers=worker_count,
+                    mp_context=get_context("spawn"),
+                ) as executor:
+                    for sheet_name, sheet_data in sheet_items:
+                        payload = (
+                            sheet_name,
+                            sheet_data,
+                            self._worker_settings(file_path, sheet_name, fitting_method),
+                        )
+                        futures[executor.submit(_analyze_test_process, payload)] = sheet_name
+                    for future in as_completed(futures):
+                        sheet_name, test_result = future.result()
+                        analyzed[sheet_name] = test_result
+        except Exception as exc:
+            remaining = [item for item in sheet_items if item[0] not in analyzed]
+            warning = (
+                f"Parallel test analysis was unavailable ({exc}); "
+                f"processing {len(remaining)} remaining test(s) sequentially."
+            )
+            logger.warning(warning)
+            warnings_list.append(warning)
+            analyzed.update(
+                self._analyze_tests_sequential(remaining, file_path, fitting_method)
+            )
+        return analyzed
     
     def analyze_single_test(self, data: pd.DataFrame, test_name: str,
                            fitting_method: str = 'oliver_pharr') -> Dict[str, any]:
