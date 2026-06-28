@@ -24,6 +24,13 @@ from multiprocessing import freeze_support
 from datetime import datetime
 from tempfile import gettempdir
 
+# Ask Qt to use device-independent coordinates on high-density displays. These
+# must be set before importing/initializing Qt. macOS already does this natively;
+# the settings mainly prevent Windows/Parallels from exposing Retina pixels as
+# tiny unscaled UI coordinates.
+os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "1")
+os.environ.setdefault("QT_SCALE_FACTOR_ROUNDING_POLICY", "PassThrough")
+
 # PyInstaller's multiprocessing workers must be diverted before importing Qt,
 # NumPy, SciPy, or the rest of the GUI in the spawned child process.
 if __name__ == "__main__":
@@ -740,7 +747,9 @@ class MatplotlibWidget(QWidget):
     def _find_bundled_plot_editor(self) -> Optional[str]:
         """Return the packaged FigureForge bridge when running from the app bundle."""
         candidates = [
+            app_resource_root() / "figureforge" / "IndentAnalyzerFigureForge.exe",
             app_resource_root() / "figureforge" / "IndentAnalyzerFigureForge",
+            app_resource_root() / "IndentAnalyzerFigureForge.exe",
             app_resource_root() / "IndentAnalyzerFigureForge",
         ]
         for candidate in candidates:
@@ -1708,7 +1717,7 @@ class NanoindentationGUI(QMainWindow):
             app.setWindowIcon(icon)
 
     def configure_responsive_metrics(self):
-        """Calculate UI dimensions from the current screen instead of fixed pixels."""
+        """Calculate UI dimensions from Qt's device-independent screen geometry."""
         screen = QApplication.primaryScreen()
         if screen:
             geometry = screen.availableGeometry()
@@ -1717,31 +1726,40 @@ class NanoindentationGUI(QMainWindow):
         else:
             screen_width, screen_height = 1440, 900
 
-        base_scale = min(screen_width / 1440.0, screen_height / 900.0)
-        self.ui_scale = max(0.78, min(1.18, base_scale))
-        self.font_scale = max(0.88, min(1.14, base_scale))
+        # Square-root scaling remains usable at both ends: it does not crush a
+        # small laptop display or make controls enormous on a 4K/5K desktop.
+        screen_scale = min(screen_width / 1440.0, screen_height / 900.0)
+        adaptive_scale = screen_scale ** 0.5
+        self.ui_scale = max(0.82, min(1.60, adaptive_scale))
+        self.font_scale = max(0.90, min(1.45, adaptive_scale))
 
         target_width = int(screen_width * (0.96 if screen_width < 1300 else 0.92))
         target_height = int(screen_height * (0.94 if screen_height < 850 else 0.88))
         self.window_target_size = QSize(
-            max(760, min(target_width, 1800)),
-            max(560, min(target_height, 1120))
+            max(360, min(target_width, screen_width)),
+            max(300, min(target_height, screen_height))
         )
 
+        usable_min_width = max(360, screen_width - self.sp(32))
+        usable_min_height = max(300, screen_height - self.sp(32))
         self.window_min_size = QSize(
-            min(max(740, self.sp(980)), max(640, screen_width - self.sp(80))),
-            min(max(540, self.sp(660)), max(500, screen_height - self.sp(80)))
+            min(max(520, self.sp(900)), usable_min_width),
+            min(max(420, self.sp(620)), usable_min_height)
         )
-        self.control_panel_width = max(self.sp(330), min(self.sp(500), int(self.window_target_size.width() * 0.34)))
-        self.results_panel_width = max(self.sp(560), self.window_target_size.width() - self.control_panel_width)
-        self.app_font_point_size = max(9, min(12, int(round(10 * self.font_scale))))
+        self.control_panel_ratio = 0.32
+        self.control_panel_width = min(
+            max(self.sp(280), int(self.window_target_size.width() * self.control_panel_ratio)),
+            int(self.window_target_size.width() * 0.45),
+        )
+        self.results_panel_width = max(1, self.window_target_size.width() - self.control_panel_width)
+        self.app_font_point_size = max(9, min(15, int(round(10 * self.font_scale))))
 
     def sp(self, value: float) -> int:
         """Scale spacing and fixed dimensions."""
         return max(1, int(round(value * getattr(self, "ui_scale", 1.0))))
 
     def fp(self, value: float) -> int:
-        """Scale CSS pixel font sizes conservatively."""
+        """Scale point-sized fonts conservatively for the available display."""
         return max(8, int(round(value * getattr(self, "font_scale", 1.0))))
 
     def apply_responsive_app_font(self):
@@ -1751,6 +1769,19 @@ class NanoindentationGUI(QMainWindow):
         font = app.font()
         font.setPointSize(getattr(self, "app_font_point_size", 10))
         app.setFont(font)
+
+    def bind_screen_change_listener(self):
+        """Recalculate density metrics when a window moves between displays."""
+        handle = self.windowHandle()
+        if handle and not getattr(self, "_screen_listener_bound", False):
+            handle.screenChanged.connect(self._handle_screen_changed)
+            self._screen_listener_bound = True
+
+    def _handle_screen_changed(self, _screen=None):
+        self.configure_responsive_metrics()
+        self.apply_responsive_app_font()
+        self.setMinimumSize(self.window_min_size)
+        self.setStyleSheet(self.get_stylesheet())
 
     def get_default_calibration_coefficients(self) -> Dict[str, float]:
         return {
@@ -2715,21 +2746,24 @@ OVERALL VERDICT
         main_layout.addWidget(workflow_nav)
 
         # Create splitter for main content
-        main_splitter = QSplitter(Qt.Horizontal)
-        main_splitter.setChildrenCollapsible(False)
-        main_layout.addWidget(main_splitter)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        main_layout.addWidget(self.main_splitter)
         main_layout.setStretch(0, 0)
         main_layout.setStretch(1, 0)
         main_layout.setStretch(2, 1)
 
-        main_splitter.addWidget(left_panel)
+        self.main_splitter.addWidget(left_panel)
         
         # Right panel - Results and plots
         right_panel = self.create_results_panel()
-        main_splitter.addWidget(right_panel)
+        self.main_splitter.addWidget(right_panel)
         
-        # Set splitter proportions
-        main_splitter.setSizes([self.control_panel_width, self.results_panel_width])
+        # Keep the workflow/results relationship proportional when the window
+        # is maximized or moved between displays. Users can still drag it.
+        self.main_splitter.setStretchFactor(0, 32)
+        self.main_splitter.setStretchFactor(1, 68)
+        self.main_splitter.setSizes([self.control_panel_width, self.results_panel_width])
         self._configure_results_panel_visibility()
         
         # Status bar
@@ -2757,7 +2791,7 @@ OVERALL VERDICT
         row.setSpacing(self.sp(10))
 
         title_label = QLabel("🔬 Nanoindentation Analysis Suite")
-        title_label.setStyleSheet(f"font-size:{self.fp(18)}px; font-weight:600; color:#24313a;")
+        title_label.setStyleSheet(f"font-size:{self.fp(18)}pt; font-weight:600; color:#24313a;")
         row.addWidget(title_label)
 
         iso_badge = QLabel("ISO 14577-4:2016")
@@ -2774,7 +2808,7 @@ OVERALL VERDICT
         row.addWidget(iso_badge)
 
         self.header_file_label = QLabel("No experiment file selected")
-        self.header_file_label.setStyleSheet(f"font-size:{self.fp(11)}px; color:#5e6a72;")
+        self.header_file_label.setStyleSheet(f"font-size:{self.fp(11)}pt; color:#5e6a72;")
         self.header_file_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         row.addWidget(self.header_file_label, 1)
 
@@ -2925,7 +2959,7 @@ OVERALL VERDICT
 
         self.live_plot_lsq_status_label = QLabel("Select a single sheet to enable LSQ fit.")
         self.live_plot_lsq_status_label.setWordWrap(True)
-        self.live_plot_lsq_status_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}px;")
+        self.live_plot_lsq_status_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}pt;")
         section2_layout.addWidget(self.live_plot_lsq_status_label, 2, 0, 1, 2)
 
         section3_group = QGroupBox("3. Refresh and generate plot")
@@ -2979,7 +3013,7 @@ OVERALL VERDICT
 
         self.expert_offsets_status_label = QLabel("h0 offsets: no generated file-load defaults yet.")
         self.expert_offsets_status_label.setWordWrap(True)
-        self.expert_offsets_status_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}px;")
+        self.expert_offsets_status_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}pt;")
         offsets_layout.addWidget(self.expert_offsets_status_label)
 
         self.expert_offsets_reset_button = QPushButton("Reset to File-Load h0 Offsets")
@@ -3305,7 +3339,7 @@ OVERALL VERDICT
             "Average profile summarizes selected tests; Individual profiles overlays each selected test."
         )
         self.csm_plot_mode_help_label.setWordWrap(True)
-        self.csm_plot_mode_help_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}px;")
+        self.csm_plot_mode_help_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}pt;")
         csm_settings_layout.addWidget(self.csm_plot_mode_help_label, 4, 0, 1, 2)
 
         depth_min_label = QLabel("Plot/result depth min (nm):")
@@ -3414,7 +3448,7 @@ OVERALL VERDICT
         plot_buttons_group_layout.setSpacing(self.sp(6))
         self.step4_plot_buttons_note = QLabel("Generate test curves in Step 2 to populate review buttons.")
         self.step4_plot_buttons_note.setWordWrap(True)
-        self.step4_plot_buttons_note.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}px;")
+        self.step4_plot_buttons_note.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(10)}pt;")
         plot_buttons_group_layout.addWidget(self.step4_plot_buttons_note)
 
         plot_buttons_scroll = QScrollArea()
@@ -3562,7 +3596,9 @@ OVERALL VERDICT
         panel_layout.setSpacing(self.sp(4))
 
         tab_widget = QTabWidget()
-        tab_widget.setMinimumWidth(self.sp(520))
+        tab_widget.setMinimumWidth(
+            min(self.sp(520), max(self.sp(260), int(self.window_target_size.width() * 0.50)))
+        )
         tab_widget.tabBar().setExpanding(False)
         tab_widget.tabBar().setElideMode(Qt.ElideRight)
         tab_widget.tabBar().setUsesScrollButtons(True)
@@ -3638,7 +3674,7 @@ OVERALL VERDICT
 
         self.test_nav_label = QLabel("No tests loaded")
         self.test_nav_label.setAlignment(Qt.AlignCenter)
-        self.test_nav_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(11)}px;")
+        self.test_nav_label.setStyleSheet(f"color:#5e6a72; font-size:{self.fp(11)}pt;")
         self.test_nav_label.setWordWrap(False)
 
         self.test_nav_next = QPushButton("Next  ▶")
@@ -3654,7 +3690,7 @@ OVERALL VERDICT
             "Checked tests are used in averages, uncertainty summaries, CSM selections, and exports. "
             "Uncheck a questionable curve to exclude it."
         )
-        self.test_include_checkbox.setStyleSheet(f"color:#24313a; font-size:{self.fp(11)}px;")
+        self.test_include_checkbox.setStyleSheet(f"color:#24313a; font-size:{self.fp(11)}pt;")
         self.test_include_checkbox.toggled.connect(self._current_test_inclusion_changed)
 
         nav_h.addWidget(self.test_nav_prev)
@@ -3706,7 +3742,7 @@ OVERALL VERDICT
                 border-left:4px solid #00a8cc;
                 border-radius:{self.sp(6)}px;
                 padding:{self.sp(7)}px {self.sp(9)}px;
-                font-size:{self.fp(10)}px;
+                font-size:{self.fp(10)}pt;
             }}
         """)
 
@@ -3748,7 +3784,7 @@ OVERALL VERDICT
                 border:1px solid #e1e7eb;
                 border-radius:{self.sp(5)}px;
                 padding:{self.sp(6)}px {self.sp(8)}px;
-                font-size:{self.fp(10)}px;
+                font-size:{self.fp(10)}pt;
             }}
         """)
 
@@ -5369,25 +5405,25 @@ OVERALL VERDICT
             QPushButton {{
                 padding: {self.sp(8)}px {self.sp(14)}px;
                 border-radius: {self.sp(6)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
                 min-height: {self.sp(18)}px;
             }}
             QLineEdit {{
                 padding: {self.sp(8)}px {self.sp(10)}px;
                 border-radius: {self.sp(6)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
                 min-height: {self.sp(18)}px;
             }}
             QSpinBox, QDoubleSpinBox {{
                 padding: {self.sp(6)}px;
                 border-radius: {self.sp(6)}px;
-                font-size: {self.fp(10)}px;
+                font-size: {self.fp(10)}pt;
                 min-height: {self.sp(18)}px;
             }}
             QComboBox {{
                 padding: {self.sp(7)}px {self.sp(10)}px;
                 border-radius: {self.sp(6)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
                 min-height: {self.sp(18)}px;
             }}
             QComboBox::drop-down {{
@@ -5397,7 +5433,7 @@ OVERALL VERDICT
                 border-radius: {self.sp(8)}px;
                 margin-top: {self.sp(11)}px;
                 padding-top: {self.sp(11)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
             }}
             QGroupBox::title {{
                 left: {self.sp(12)}px;
@@ -5408,11 +5444,11 @@ OVERALL VERDICT
                 margin-right: {self.sp(3)}px;
                 border-top-left-radius: {self.sp(6)}px;
                 border-top-right-radius: {self.sp(6)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
                 min-width: {self.sp(64)}px;
             }}
             QTextEdit {{
-                font-size: {self.fp(10)}px;
+                font-size: {self.fp(10)}pt;
                 padding: {self.sp(7)}px;
                 border-radius: {self.sp(6)}px;
             }}
@@ -5421,11 +5457,11 @@ OVERALL VERDICT
             }}
             QHeaderView::section {{
                 padding: {self.sp(7)}px;
-                font-size: {self.fp(10)}px;
+                font-size: {self.fp(10)}pt;
             }}
             QCheckBox {{
                 spacing: {self.sp(7)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
             }}
             QCheckBox::indicator {{
                 width: {self.sp(17)}px;
@@ -5433,7 +5469,7 @@ OVERALL VERDICT
                 border-radius: {self.sp(4)}px;
             }}
             QLabel {{
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
             }}
             QScrollBar:vertical {{
                 width: {self.sp(12)}px;
@@ -5840,7 +5876,7 @@ OVERALL VERDICT
                     padding: {self.sp(6)}px {self.sp(8)}px;
                     border-radius: {self.sp(5)}px;
                     font-weight: 600;
-                    font-size: {self.fp(10)}px;
+                    font-size: {self.fp(10)}pt;
                 }}
                 QPushButton:hover {{
                     background-color: #d5f1f8;
@@ -5859,7 +5895,7 @@ OVERALL VERDICT
                     padding: {self.sp(6)}px {self.sp(8)}px;
                     border-radius: {self.sp(5)}px;
                     font-weight: 600;
-                    font-size: {self.fp(10)}px;
+                    font-size: {self.fp(10)}pt;
                 }}
                 QPushButton:hover {{
                     background-color: #e7f7fb;
@@ -6951,7 +6987,7 @@ OVERALL VERDICT
                 border: 1px solid #d6dbe0;
                 border-radius: {self.sp(6)}px;
                 padding: {self.sp(7)}px {self.sp(10)}px;
-                font-size: {self.fp(11)}px;
+                font-size: {self.fp(11)}pt;
             }}
             QComboBox:focus {{
                 border: 2px solid #00d9ff;
@@ -8556,6 +8592,14 @@ OVERALL VERDICT
 
 def main():
     """Main application entry point"""
+    if hasattr(Qt, "AA_EnableHighDpiScaling"):
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    if hasattr(Qt, "AA_UseHighDpiPixmaps"):
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    rounding_policy = getattr(Qt, "HighDpiScaleFactorRoundingPolicy", None)
+    if rounding_policy and hasattr(QApplication, "setHighDpiScaleFactorRoundingPolicy"):
+        QApplication.setHighDpiScaleFactorRoundingPolicy(rounding_policy.PassThrough)
+
     app = QApplication(sys.argv)
     
     # Set application properties
@@ -8566,6 +8610,7 @@ def main():
     # Create and show main window
     window = NanoindentationGUI()
     window.show()
+    window.bind_screen_change_listener()
     
     # Start event loop
     sys.exit(app.exec_())

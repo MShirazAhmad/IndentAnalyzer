@@ -26,6 +26,8 @@ ENV/
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!packaging/windows/*.spec
+!packaging/macos/*.spec
 
 # Installer logs
 pip-log.txt

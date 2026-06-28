@@ -6,6 +6,9 @@ from __future__ import annotations
 import pickle
 import os
 import sys
+import importlib.abc
+import importlib.util
+import faulthandler
 from pathlib import Path
 
 from matplotlib.figure import Figure
@@ -13,8 +16,59 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
 
+
+def _smoke_trace(message: str):
+    trace_path = os.environ.get("INDENTANALYZER_FIGUREFORGE_TRACE")
+    if trace_path:
+        with open(trace_path, "a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+
+
+_smoke_trace("bridge imported")
+_trace_handle = None
+if os.environ.get("INDENTANALYZER_FIGUREFORGE_TRACE"):
+    _trace_handle = open(
+        os.environ["INDENTANALYZER_FIGUREFORGE_TRACE"], "a", encoding="utf-8"
+    )
+    faulthandler.dump_traceback_later(15, repeat=True, file=_trace_handle)
+
+# FigureForge 0.3.3 imports its initializer a second time under the synthetic
+# name ``FigureForge.__init__`` before its root package defines resource paths.
+# Supply that metadata module directly so frozen layouts use the real package
+# directory and do not need a duplicate tree of Python plugin files.
+class _FigureForgeMetadataLoader(importlib.abc.Loader):
+    def exec_module(self, module):
+        package_dir = Path(sys.modules["FigureForge"].__path__[0]).resolve()
+        module.__version__ = "0.3.3"
+        module.CURRENT_DIR = str(package_dir)
+        module.ASSETS_DIR = str(package_dir / "resources" / "assets")
+        module.ICONS_DIR = str(package_dir / "resources" / "icons")
+        module.PLUGINS_DIR = str(package_dir / "plugins")
+
+
+class _FigureForgeMetadataFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "FigureForge.__init__":
+            return importlib.util.spec_from_loader(fullname, _FigureForgeMetadataLoader())
+        return None
+
+
+sys.meta_path.insert(0, _FigureForgeMetadataFinder())
+
+_smoke_trace("before FigureForge GUI import")
+import FigureForge
+_smoke_trace("FigureForge package imported")
+import qdarktheme
+_smoke_trace("qdarktheme imported")
+import FigureForge.dialogs.ff_dialogs
+_smoke_trace("FigureForge dialogs imported")
+import FigureForge.figure_manager
+_smoke_trace("FigureForge manager imported")
+import FigureForge.preferences
+_smoke_trace("FigureForge preferences imported")
 from FigureForge.gui import MainWindow
 from FigureForge.preferences import Preferences
+_smoke_trace("after FigureForge GUI import")
 
 
 class _SilentSplash:
@@ -97,6 +151,7 @@ def _simplify_menus(window: MainWindow):
 
 
 def main() -> int:
+    _smoke_trace("main entered")
     if len(sys.argv) != 3:
         print("Usage: IndentAnalyzerFigureForge INPUT.pkl OUTPUT.pkl", file=sys.stderr)
         return 2
@@ -105,16 +160,21 @@ def main() -> int:
     output_path = Path(sys.argv[2])
     with input_path.open("rb") as handle:
         figure = pickle.load(handle)
+    _smoke_trace("figure loaded")
     if not isinstance(figure, Figure):
         raise TypeError(f"Expected a Matplotlib Figure, got {type(figure).__name__}")
 
     preferences = Preferences()
     preferences.set("show_welcome", False)
     preferences.set("check_for_updates", False)
+    _smoke_trace("preferences set")
 
     app = QApplication.instance() or QApplication(sys.argv)
+    _smoke_trace("application created")
     splash = _SilentSplash()
+    _smoke_trace("before window creation")
     window = MainWindow(splash, figure)
+    _smoke_trace("window created")
     window.setWindowIcon(QIcon())
     window.setWindowTitle("Plot Editor")
     _install_stack_controls(window)
@@ -132,11 +192,14 @@ def main() -> int:
     smoke_delay = os.environ.get("INDENTANALYZER_FIGUREFORGE_SMOKE_MS")
     if smoke_delay:
         QTimer.singleShot(max(int(smoke_delay), 1), app.quit)
+    _smoke_trace("before event loop")
     app.exec()
+    _smoke_trace("after event loop")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("wb") as handle:
         pickle.dump(window.fm.figure, handle, protocol=4)
+    _smoke_trace("output written")
     return 0
 
 
